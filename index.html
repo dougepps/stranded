@@ -20,7 +20,7 @@
     height: 100vh;
     -webkit-user-select: none;
     user-select: none;
-    touch-action: manipulation;
+    touch-action: none;
   }
 
   header {
@@ -1175,7 +1175,6 @@ function renderBoard() {
       }
 
       cell.addEventListener('pointerdown', (e) => onPointerDown(r, c, e));
-      cell.addEventListener('pointerenter', (e) => onPointerEnter(r, c, e));
       board.appendChild(cell);
     }
   }
@@ -1368,8 +1367,16 @@ function onPointerDown(r, c, e) {
   // Save a snapshot so we can restore if it's just a tap
 }
 
-function onPointerEnter(r, c, e) {
-  if (!pointerIsDown) return;
+function getCellFromPoint(x, y) {
+  const el = document.elementFromPoint(x, y);
+  if (!el || !el.classList.contains('cell')) return null;
+  const r = parseInt(el.dataset.row, 10);
+  const c = parseInt(el.dataset.col, 10);
+  if (isNaN(r) || isNaN(c)) return null;
+  return [r, c];
+}
+
+function handleDragMove(r, c) {
   if (isCellFound(r, c)) return;
 
   // First move away from the starting cell — this is now a drag
@@ -1395,6 +1402,17 @@ function onPointerEnter(r, c, e) {
   selectedCells.push([r, c]);
   refreshUI();
 }
+
+document.addEventListener('pointermove', (e) => {
+  if (!pointerIsDown) return;
+  const cell = getCellFromPoint(e.clientX, e.clientY);
+  if (!cell) return;
+  const [r, c] = cell;
+  // Only act when entering a new cell
+  const last = selectedCells.length > 0 ? selectedCells[selectedCells.length - 1] : dragStartedCell;
+  if (last && last[0] === r && last[1] === c) return;
+  handleDragMove(r, c);
+});
 
 function onPointerUp(e) {
   if (!pointerIsDown) return;
