@@ -31,6 +31,8 @@ The total letter count (spangram + all words) must equal exactly **48** to fill 
 index.html?theme=Hiking+with+Seth&spangram=BULLSHIT&words=COMPLAIN,BRIDGES,HATS,WATERS,BLUEBARN,ROLLING
 ```
 
+https://dougepps.github.io/stranded/index.html?theme=Hiking+with+Seth&spangram=BULLSHIT&words=COMPLAIN,BRIDGES,HATS,WATERS,BLUEBARN,ROLLING
+
 ## Puzzle Generation
 
 The generator uses a seeded PRNG (based on a hash of the puzzle inputs) so reloading the same puzzle always produces the same board. The algorithm:
