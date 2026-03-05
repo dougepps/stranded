@@ -21,6 +21,7 @@ Create custom puzzles via URL parameters:
 
 ```
 index.html?theme=THEME&spangram=SPANGRAM&words=WORD1,WORD2,WORD3,...
+index.html?theme=all+in+the+family&spangram=FUNNYONE&words=UPLAND%2CCARDS%2CSUSHI%2CWAFFLES%2CMOVIES%2CDOGGIES%2CBIGB
 ```
 
 The total letter count (spangram + all words) must equal exactly **48** to fill the 8×6 grid.
@@ -30,8 +31,6 @@ The total letter count (spangram + all words) must equal exactly **48** to fill 
 ```
 index.html?theme=Hiking+with+Seth&spangram=BULLSHIT&words=COMPLAIN,BRIDGES,HATS,WATERS,BLUEBARN,ROLLING
 ```
-
-https://dougepps.github.io/stranded/index.html?theme=Hiking+with+Seth&spangram=BULLSHIT&words=COMPLAIN,BRIDGES,HATS,WATERS,BLUEBARN,ROLLING
 
 ## Puzzle Generation
 

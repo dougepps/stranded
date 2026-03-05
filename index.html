@@ -20,6 +20,7 @@
     height: 100vh;
     -webkit-user-select: none;
     user-select: none;
+    touch-action: manipulation;
   }
 
   header {
@@ -64,6 +65,7 @@
     display: grid;
     gap: 3px;
     position: relative;
+    place-items: center;
   }
 
   .cell {
@@ -354,8 +356,8 @@
 </div>
 
 <!-- Debug Panel -->
-<div class="debug-panel" id="debugPanel">
-  <h3>Debug <button class="debug-toggle" id="debugToggle">hide</button></h3>
+<div class="debug-panel collapsed" id="debugPanel">
+  <h3>Debug <button class="debug-toggle" id="debugToggle">show</button></h3>
   <div class="debug-body" id="debugBody">
     <button class="debug-btn" id="debugRevealBtn">Reveal Next Word</button>
     <button class="debug-btn hint-inc" id="debugNonThemeBtn">+1 Non-Puzzle Word</button>
@@ -932,6 +934,49 @@ function straightenPaths(result) {
   return result;
 }
 
+// ──── PASS 3: PENALIZE LEFT-TO-RIGHT ────
+// If a word has 3+ consecutive letters going left-to-right on the same row
+// (especially at the start), reverse the path so it reads right-to-left instead.
+
+function penalizeLeftToRight(result) {
+  const { grid, spangram, themeWords, wordPaths } = result;
+  const allWords = [spangram, ...themeWords];
+
+  for (const word of allWords) {
+    const path = wordPaths[word];
+    if (path.length < 3) continue;
+
+    // Count max consecutive L→R steps (same row, col increases by 1)
+    let maxLtrRun = 0;
+    let currentRun = 0;
+    let startsLtr = false;
+    for (let i = 0; i < path.length - 1; i++) {
+      const [r1, c1] = path[i];
+      const [r2, c2] = path[i + 1];
+      if (r2 === r1 && c2 === c1 + 1) {
+        currentRun++;
+        if (i === 0) startsLtr = true;
+      } else {
+        if (currentRun > maxLtrRun) maxLtrRun = currentRun;
+        currentRun = 0;
+      }
+    }
+    if (currentRun > maxLtrRun) maxLtrRun = currentRun;
+
+    // Flip if 3+ consecutive L→R steps, or 2+ starting from the beginning
+    if (maxLtrRun >= 3 || (startsLtr && maxLtrRun >= 2)) {
+      const reversed = [...path].reverse();
+      wordPaths[word] = reversed;
+      // Reassign letters along the reversed path
+      for (let i = 0; i < word.length; i++) {
+        grid[reversed[i][0]][reversed[i][1]] = word[i];
+      }
+    }
+  }
+
+  return result;
+}
+
 // Count total inter-word and self crossings in a result
 function countAllCrossings(wordPaths, allWords) {
   // Build all segments: [r1, c1, r2, c2, wordIndex]
@@ -982,7 +1027,7 @@ function generatePuzzle() {
     attempts++;
     const result = tryGenerateOnce(puzzleSet);
     if (result) {
-      const straightened = straightenPaths(result);
+      const straightened = penalizeLeftToRight(straightenPaths(result));
       const allWords = [straightened.spangram, ...straightened.themeWords];
       const crossings = countAllCrossings(straightened.wordPaths, allWords);
       console.log(`generatePuzzle: attempt ${attempts} succeeded, ${crossings} crossings`);
@@ -1022,7 +1067,7 @@ function generatePuzzle() {
       const result = tryGenerateOnce(ps);
       if (result) {
         console.log(`generatePuzzle: fallback success in ${(performance.now()-t0).toFixed(0)}ms`);
-        return straightenPaths(result);
+        return penalizeLeftToRight(straightenPaths(result));
       }
     }
   }
@@ -1110,8 +1155,9 @@ function renderBoard() {
       cell.textContent = puzzle.grid[r][c];
       cell.dataset.row = r;
       cell.dataset.col = c;
-      cell.style.width = cellSize + 'px';
-      cell.style.height = cellSize + 'px';
+      const dotSize = Math.round(cellSize * 0.80);
+      cell.style.width = dotSize + 'px';
+      cell.style.height = dotSize + 'px';
       cell.style.fontSize = fontSize + 'px';
 
       for (const [word, path] of Object.entries(foundPaths)) {
@@ -1536,7 +1582,7 @@ function renderDebug() {
 }
 
 document.getElementById('debugRevealBtn').addEventListener('click', () => {
-  const allTargets = [puzzle.spangram, ...puzzle.themeWords];
+  const allTargets = [...puzzle.themeWords, puzzle.spangram];
   const next = allTargets.find(w => !foundWords.has(w));
   if (!next) return;
 
