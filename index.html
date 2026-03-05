@@ -1,0 +1,1612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Stranded</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+  body {
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    background: #fff;
+    color: #222;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100vh;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  header {
+    width: 100%;
+    text-align: center;
+    padding: 8px 16px 2px;
+    flex-shrink: 0;
+  }
+  header h1 {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  .theme-hint {
+    font-size: 15px;
+    color: #666;
+    margin-top: 2px;
+    font-style: italic;
+  }
+
+  .word-display {
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #4a90d9;
+    flex-shrink: 0;
+  }
+
+  .board-container {
+    position: relative;
+    padding: 4px;
+    flex-shrink: 0;
+  }
+
+  .board {
+    display: grid;
+    gap: 3px;
+    position: relative;
+  }
+
+  .cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    border-radius: 50%;
+    background: #f0f0f0;
+    cursor: pointer;
+    position: relative;
+    z-index: 2;
+    transition: background 0.15s, color 0.15s, transform 0.1s;
+    touch-action: none;
+  }
+  .cell.selected {
+    background: #4a90d9;
+    color: #fff;
+    transform: scale(1.08);
+  }
+  .cell.found-theme {
+    background: #b8d4f0;
+    color: #2a5a8a;
+  }
+  .cell.found-spangram {
+    background: #f0d060;
+    color: #6a5a10;
+  }
+  .cell.hint-glow {
+    box-shadow: 0 0 0 3px #4a90d9, 0 0 8px rgba(74,144,217,0.5);
+  }
+  .cell.invalid-flash {
+    animation: shake 0.4s ease;
+  }
+
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-4px); }
+    40% { transform: translateX(4px); }
+    60% { transform: translateX(-3px); }
+    80% { transform: translateX(3px); }
+  }
+
+  svg.lines {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+    pointer-events: none;
+  }
+  svg.lines line {
+    stroke: #4a90d9;
+    stroke-width: 5;
+    stroke-linecap: round;
+    opacity: 0.4;
+  }
+
+  .status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 4px 16px;
+    font-size: 13px;
+    color: #888;
+    flex-shrink: 0;
+  }
+  .hint-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .hint-dots {
+    display: flex;
+    gap: 3px;
+  }
+  .hint-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid #4a90d9;
+    background: transparent;
+  }
+  .hint-dot.filled {
+    background: #4a90d9;
+  }
+
+  .message {
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    color: #888;
+    flex-shrink: 0;
+  }
+
+  .controls {
+    display: flex;
+    gap: 10px;
+    padding: 4px 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .controls button {
+    padding: 8px 20px;
+    border: 2px solid #ccc;
+    border-radius: 24px;
+    background: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .controls button:hover { background: #f5f5f5; }
+  .controls button.hint-btn {
+    border-color: #4a90d9;
+    color: #4a90d9;
+  }
+  .controls button.hint-btn:disabled {
+    border-color: #ccc;
+    color: #aaa;
+    cursor: default;
+  }
+
+  .found-words {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+    padding: 6px 16px;
+    overflow-y: auto;
+    flex: 1;
+    align-content: flex-start;
+  }
+  .found-word {
+    padding: 3px 10px;
+    border-radius: 16px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .found-word.theme { background: #b8d4f0; color: #2a5a8a; }
+  .found-word.spangram { background: #f0d060; color: #6a5a10; }
+  .found-word.placeholder {
+    background: #e8e8e8;
+    color: #e8e8e8;
+    min-width: 50px;
+  }
+
+  .win-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  .win-overlay.hidden { display: none; }
+  .win-box {
+    background: #fff;
+    border-radius: 16px;
+    padding: 28px 36px;
+    text-align: center;
+  }
+  .win-box h2 { font-size: 26px; margin-bottom: 8px; }
+  .win-box p { font-size: 15px; color: #666; margin-bottom: 16px; }
+  .win-buttons { display: flex; gap: 12px; justify-content: center; }
+  .win-buttons button {
+    padding: 10px 28px;
+    border: none;
+    border-radius: 24px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .win-buttons .btn-primary { background: #4a90d9; color: #fff; }
+  .win-buttons .btn-secondary { background: #e8e8e8; color: #444; }
+
+  /* ──── DEBUG PANEL ──── */
+  .debug-panel {
+    position: fixed;
+    top: 8px;
+    right: 8px;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 11px;
+    font-family: monospace;
+    z-index: 200;
+    max-width: 200px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+  }
+  .debug-panel h3 {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #888;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .debug-panel .debug-toggle {
+    cursor: pointer;
+    background: none;
+    border: 1px solid #555;
+    color: #aaa;
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 9px;
+  }
+  .debug-btn {
+    display: block;
+    width: 100%;
+    margin-top: 6px;
+    padding: 5px;
+    background: #2a5a8a;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    font-family: monospace;
+  }
+  .debug-btn:hover { background: #3a7aba; }
+  .debug-btn.danger { background: #6a3a3a; }
+  .debug-btn.danger:hover { background: #8a4a4a; }
+  .debug-btn.hint-inc { background: #5a5a2a; }
+  .debug-btn.hint-inc:hover { background: #7a7a3a; }
+  .debug-panel.collapsed .debug-body { display: none; }
+  .debug-dict-status { color: #666; font-size: 10px; margin-top: 4px; }
+
+  @media (max-width: 400px) {
+    header h1 { font-size: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Stranded</h1>
+  <div class="theme-hint" id="themeHint"></div>
+</header>
+
+<div class="word-display" id="wordDisplay"></div>
+
+<div class="board-container" id="boardContainer">
+  <svg class="lines" id="linesSvg"></svg>
+  <div class="board" id="board"></div>
+</div>
+
+<div class="message" id="message"></div>
+
+<div class="status-bar">
+  <div class="hint-status">
+    <span>Hints:</span>
+    <div class="hint-dots" id="hintDots"></div>
+    <span id="hintCreditsDisplay"></span>
+  </div>
+  <div id="hintProgress"></div>
+</div>
+
+<div class="controls">
+  <button id="clearBtn">Clear</button>
+  <button id="submitBtn">Submit</button>
+  <button id="hintBtn" class="hint-btn" disabled>Hint</button>
+  <button id="newGameBtn">New Game</button>
+</div>
+
+<div class="found-words" id="foundWords"></div>
+
+<div class="win-overlay hidden" id="winOverlay">
+  <div class="win-box">
+    <h2>You found them all!</h2>
+    <p id="winStats"></p>
+    <div class="win-buttons">
+      <button class="btn-secondary" id="winViewBoard">View Board</button>
+      <button class="btn-primary" id="winNewGame">New Game</button>
+    </div>
+  </div>
+</div>
+
+<!-- Debug Panel -->
+<div class="debug-panel" id="debugPanel">
+  <h3>Debug <button class="debug-toggle" id="debugToggle">hide</button></h3>
+  <div class="debug-body" id="debugBody">
+    <button class="debug-btn" id="debugRevealBtn">Reveal Next Word</button>
+    <button class="debug-btn hint-inc" id="debugNonThemeBtn">+1 Non-Puzzle Word</button>
+    <button class="debug-btn danger" id="debugRevealAllBtn">Reveal All</button>
+    <div class="debug-dict-status" id="debugLetterCount"></div>
+    <div class="debug-dict-status" id="debugCustomNote"></div>
+    <div class="debug-dict-status" id="debugDictStatus">Dictionary: loading...</div>
+    <a href="maker.html" style="display:block;margin-top:6px;color:#6be;font-size:10px;">Puzzle Maker →</a>
+  </div>
+</div>
+
+<script>
+// ──── DICTIONARY ────
+
+let dictionary = new Set();
+let dictionaryLoaded = false;
+
+// Inline fallback: small set of common words
+const FALLBACK_WORDS = [
+  "THE","AND","FOR","ARE","BUT","NOT","YOU","ALL","CAN","HER","WAS","ONE","OUR","OUT",
+  "ACE","ACT","ADD","AGE","AGO","AID","AIM","AIR","ALE","ARM","ART","ATE","AWE",
+  "BAD","BAG","BAN","BAR","BAT","BED","BIG","BIT","BOW","BOX","BOY","BUD","BUG","BUS","BUY",
+  "CAB","CAP","CAR","CAT","COP","COT","COW","CRY","CUB","CUP","CUR","CUT",
+  "DAD","DAM","DAY","DEN","DEW","DID","DIG","DIM","DIP","DOC","DOG","DOT","DRY","DUB","DUE","DUG","DUO",
+  "EAR","EAT","EEL","EGG","ELF","ELK","ELM","END","ERA","EVE","EYE",
+  "FAN","FAR","FAT","FED","FEW","FIG","FIN","FIT","FIX","FLY","FOE","FOX","FRY","FUN","FUR",
+  "GAP","GAS","GET","GIG","GIN","GOD","GOT","GUM","GUN","GUT","GUY","GYM",
+  "HAD","HAM","HAS","HAT","HAY","HEN","HID","HIM","HIP","HIS","HIT","HOG","HOP","HOT","HOW","HUB","HUE","HUG","HUT",
+  "ICE","ICY","ILL","INK","INN","ION","ITS","IVY",
+  "JAB","JAM","JAR","JAW","JAY","JET","JOB","JOG","JOT","JOY","JUG",
+  "KEG","KEY","KID","KIN","KIT",
+  "LAB","LAD","LAG","LAP","LAW","LAY","LED","LEG","LET","LID","LIE","LIP","LIT","LOG","LOT","LOW",
+  "MAD","MAN","MAP","MAT","MAY","MEN","MET","MID","MIX","MOB","MOM","MOP","MUD","MUG",
+  "NAB","NAG","NAP","NET","NEW","NIL","NIT","NOD","NOR","NOT","NOW","NUN","NUT",
+  "OAK","OAR","OAT","ODD","ODE","OFF","OIL","OLD","OPT","ORB","ORE","OUR","OUT","OWE","OWL","OWN",
+  "PAD","PAL","PAN","PAR","PAT","PAW","PAY","PEA","PEG","PEN","PER","PET","PIE","PIG","PIN","PIT","PLY","POD","POP","POT","PRY","PUB","PUG","PUN","PUP","PUT",
+  "RAG","RAM","RAN","RAP","RAT","RAW","RAY","RED","RIB","RID","RIG","RIM","RIP","ROB","ROD","ROT","ROW","RUB","RUG","RUM","RUN","RUT","RYE",
+  "SAD","SAG","SAP","SAT","SAW","SAY","SEA","SET","SEW","SHE","SHY","SIN","SIP","SIR","SIS","SIT","SIX","SKI","SKY","SLY","SOB","SOD","SON","SOW","SOY","SPA","SPY","SUB","SUM","SUN",
+  "TAB","TAD","TAG","TAN","TAP","TAR","TAX","TEA","TEN","THE","TIE","TIN","TIP","TOE","TON","TOO","TOP","TOT","TOW","TOY","TRY","TUB","TUG","TWO",
+  "URN","USE",
+  "VAN","VAT","VET","VIE","VOW",
+  "WAD","WAR","WAX","WAY","WEB","WED","WET","WHO","WIG","WIN","WIT","WOE","WOK","WON","WOO","WOW",
+  "YAK","YAM","YAP","YAW","YES","YET","YEW",
+  "ZAP","ZEN","ZIP","ZOO",
+  "ABLE","BACK","BAND","BANK","BASE","BATH","BEAR","BEAT","BEEN","BELL","BEND","BEST","BIKE","BILL",
+  "BIRD","BLOW","BLUE","BOAT","BODY","BOLD","BOLT","BOMB","BOND","BONE","BOOK","BOOM","BOOT","BORN",
+  "BOSS","BOTH","BOWL","BULK","BURN","BUSY","CAGE","CAKE","CALL","CALM","CAME","CAMP","CAPE",
+  "CARD","CARE","CASE","CASH","CAST","CAVE","CHOP","CITY","CLAM","CLAN","CLAP","CLAY","CLIP","CLUB",
+  "CLUE","COAL","COAT","CODE","COIL","COIN","COLD","COME","COOK","COOL","COPE","COPY","CORD","CORE",
+  "CORN","COST","CREW","CROP","CURE","CURL","CUTE","DAME","DAMP","DARE","DARK","DART",
+  "DASH","DATA","DATE","DAWN","DEAD","DEAF","DEAL","DEAR","DEBT","DECK","DEED","DEEM","DEEP","DEER",
+  "DENY","DESK","DIAL","DICE","DIET","DIRT","DISC","DISH","DOCK","DOES","DOME","DONE","DOOM",
+  "DOOR","DOSE","DOWN","DRAG","DRAW","DREW","DROP","DRUM","DUAL","DUCK","DUEL","DULL","DUMB","DUMP",
+  "DUNE","DUSK","DUST","DUTY","EACH","EARN","EASE","EAST","EASY","EDGE","EDIT","ELSE","EMIT","EPIC",
+  "EVEN","EVER","EVIL","EXAM","EXIT","FACE","FACT","FADE","FAIL","FAIR","FAKE","FALL",
+  "FAME","FARE","FARM","FAST","FATE","FEAR","FEAT","FEED","FEEL","FEET","FELL","FELT","FILE",
+  "FILL","FILM","FIND","FINE","FIRE","FIRM","FISH","FIST","FLAG","FLAT","FLAW","FLED","FLEW",
+  "FLIP","FLOW","FOAM","FOLD","FOLK","FOND","FONT","FOOD","FOOL","FOOT","FORD","FORE","FORK","FORM",
+  "FORT","FOUL","FOUR","FREE","FROM","FUEL","FULL","FUND","FURY","FUSE","GAIN","GALE","GAME",
+  "GANG","GATE","GAVE","GAZE","GEAR","GIFT","GIRL","GIVE","GLAD","GLOW","GLUE","GOAT","GOES","GOLD",
+  "GOLF","GONE","GOOD","GRAB","GRAY","GREW","GRID","GRIM","GRIN","GRIP","GROW","GULF","GUST",
+  "HACK","HAIL","HAIR","HALF","HALL","HALT","HAND","HANG","HARD","HARM","HATE","HAUL","HAVE",
+  "HAZE","HEAD","HEAL","HEAP","HEAR","HEAT","HEEL","HELD","HELL","HELP","HERB","HERE","HERO","HIGH",
+  "HIKE","HILL","HINT","HIRE","HOLD","HOLE","HOME","HOOD","HOOK","HOPE","HORN","HOST","HOUR","HUGE",
+  "HULL","HUNG","HUNT","HURT","HYMN","ICON","IDEA","INCH","INTO","IRON","ISLE","ITEM","JACK","JAIL",
+  "JAZZ","JEAN","JERK","JEST","JOKE","JUMP","JUNE","JURY","JUST","KEEN","KEEP","KEPT","KICK","KILL",
+  "KIND","KING","KISS","KNEE","KNEW","KNIT","KNOB","KNOT","KNOW","LACE","LACK","LAID","LAKE","LAMB",
+  "LAME","LAMP","LAND","LANE","LARK","LAST","LATE","LAWN","LEAD","LEAF","LEAN","LEAP","LEFT","LEND",
+  "LENS","LESS","LICK","LIFE","LIFT","LIKE","LIMB","LIME","LINE","LINK","LION","LIST","LIVE",
+  "LOAD","LOAN","LOCK","LOFT","LONE","LONG","LOOK","LORD","LOSE","LOSS","LOST","LOUD","LOVE","LUCK",
+  "LUMP","LUNG","LURE","LURK","LUSH","MADE","MAIL","MAIN","MAKE","MALE","MALL","MALT","MANE","MANY",
+  "MARK","MASK","MASS","MAST","MATE","MAZE","MEAL","MEAN","MEAT","MEET","MELT","MEMO","MEND","MENU",
+  "MERE","MESH","MESS","MILD","MILE","MILK","MILL","MIND","MINE","MINT","MISS","MODE","MOLE",
+  "MOOD","MORE","MOSS","MOST","MOVE","MUCH","MULE","MUST","MYTH","NAIL","NAME","NAVY","NEAR","NEAT",
+  "NECK","NEED","NEST","NEWS","NEXT","NICE","NINE","NODE","NONE","NOON","NORM","NOSE","NOTE","NOUN",
+  "OBEY","ODDS","OKAY","ONCE","ONLY","ONTO","OPEN","ORAL","OVAL","OVEN","OVER","PACE","PACK","PAGE",
+  "PAID","PAIN","PAIR","PALE","PALM","PANE","PARK","PART","PASS","PAST","PATH","PEAK","PEEL","PEER",
+  "PICK","PIER","PILE","PINE","PIPE","PLAN","PLAY","PLEA","PLOT","PLUG","PLUS","POEM","POET",
+  "POLE","POLL","POND","PONY","POOL","POOR","POPE","PORK","PORT","POSE","POST","POUR","PRAY","PREY",
+  "PROP","PULL","PULP","PUMP","PURE","PUSH","QUIT","QUIZ","RACE","RACK","RAGE","RAID","RAIL","RAIN",
+  "RANK","RARE","RASH","RATE","READ","REAL","REAR","REEF","RELY","RENT","REST","RICE",
+  "RICH","RIDE","RING","RIOT","RISE","RISK","ROAD","ROAM","ROAR","ROBE","ROCK","RODE","ROLE","ROLL",
+  "ROOF","ROOM","ROOT","ROPE","ROSE","RUIN","RULE","RUSH","RUST","SAFE","SAGE","SAID","SAIL","SAKE",
+  "SALE","SALT","SAME","SAND","SANE","SANG","SANK","SAVE","SEAL","SEAM","SEAT","SEED","SEEK","SEEM",
+  "SEEN","SELF","SELL","SEND","SENT","SHED","SHIP","SHOP","SHOT","SHOW","SHUT","SICK","SIDE","SIGH",
+  "SIGN","SILK","SINK","SITE","SIZE","SKIP","SLAM","SLAP","SLIM","SLIP","SLOT","SLOW",
+  "SNAP","SNOW","SOAK","SOAP","SOAR","SOCK","SOFT","SOIL","SOLD","SOLE","SOME","SONG","SOON","SORE",
+  "SORT","SOUL","SOUR","SPAN","SPIN","SPIT","SPOT","STAR","STAY","STEM","STEP","STEW",
+  "STIR","STOP","SUCH","SUIT","SURE","SURF","SWAN","SWAP","SWIM","TACK","TAIL",
+  "TAKE","TALE","TALK","TALL","TAME","TANK","TAPE","TASK","TAXI","TEAM","TEAR","TELL","TEND",
+  "TENT","TERM","TEST","TEXT","THAN","THAT","THEM","THEN","THEY","THIN","THIS","TICK","TIDE","TIDY",
+  "TIED","TIER","TILL","TILT","TIME","TINY","TIRE","TOAD","TOLL","TOMB","TONE","TOOK","TOOL",
+  "TORE","TORN","TOSS","TOUR","TOWN","TRAP","TRAY","TREE","TREK","TRIM","TRIO","TRIP",
+  "TROT","TRUE","TUBE","TUCK","TUNA","TUNE","TURF","TURN","TWIN","TYPE","UGLY","UNDO","UNIT",
+  "UPON","URGE","USED","USER","VAIN","VALE","VANE","VARY","VAST","VEIL","VEIN","VENT","VERB","VERY",
+  "VEST","VETO","VICE","VIEW","VINE","VOID","VOLT","VOTE","WADE","WAGE","WAIT","WAKE","WALK","WALL",
+  "WAND","WANT","WARD","WARM","WARN","WARP","WARY","WASH","WAVE","WEAK","WEAR","WEED",
+  "WEEK","WELL","WENT","WERE","WEST","WHAT","WHEN","WHOM","WIDE","WIFE","WILD","WILL",
+  "WIND","WINE","WING","WINK","WIPE","WIRE","WISE","WISH","WITH","WOKE","WOLF",
+  "WOOD","WOOL","WORD","WORE","WORK","WORM","WORN","WRAP","YARD","YARN","YEAR","YELL","YOUR",
+  "ZEAL","ZERO","ZINC","ZONE","ZOOM"
+];
+
+function initDictionary() {
+  // Start with fallback
+  FALLBACK_WORDS.forEach(w => dictionary.add(w));
+  dictionaryLoaded = false;
+
+  fetch('https://raw.githubusercontent.com/first20hours/google-10000-english/master/google-10000-english-no-swears.txt')
+    .then(r => r.text())
+    .then(text => {
+      const words = text.split('\n').map(w => w.trim().toUpperCase()).filter(w => w.length >= 3);
+      words.forEach(w => dictionary.add(w));
+      dictionaryLoaded = true;
+      const el = document.getElementById('debugDictStatus');
+      if (el) el.textContent = `Dictionary: ${dictionary.size} words`;
+    })
+    .catch(() => {
+      const el = document.getElementById('debugDictStatus');
+      if (el) el.textContent = `Dictionary: ${dictionary.size} words (offline)`;
+    });
+}
+
+// ──── PUZZLE GENERATION ────
+
+const ROWS = 8;
+const COLS = 6;
+const TOTAL_CELLS = ROWS * COLS; // 48
+
+// Puzzle sets designed so total letter count = 48 (fills the whole board)
+// spangram + all theme words letters must sum to exactly 48
+const PUZZLE_SETS = [
+  { // 6+4+4+4+7+3+3+4+5+4+4 = 48 ✓
+    theme: "Things that shine",
+    spangram: "BRIGHT",
+    words: ["STAR", "GOLD", "MOON", "DIAMOND", "SUN", "GEM", "GLOW", "GLEAM", "LAMP", "NEON"]
+  },
+  { // 7+4+3+5+4+5+4+4+5+3+4 = 48 ✓
+    theme: "In the kitchen",
+    spangram: "COOKING",
+    words: ["OVEN", "PAN", "SPOON", "BOWL", "KNIFE", "FORK", "MEAL", "PLATE", "MUG", "DISH"]
+  },
+  { // 7+4+4+5+5+4+4+4+3+4+4 = 48 ✓
+    theme: "At the beach",
+    spangram: "COASTAL",
+    words: ["SAND", "WAVE", "SHELL", "TOWEL", "SURF", "TIDE", "CRAB", "SUN", "PALM", "DUNE"]
+  },
+  { // 7+4+5+5+4+4+4+4+4+3+4 = 48 ✓
+    theme: "In the garden",
+    spangram: "FLOWERS",
+    words: ["ROSE", "TULIP", "DAISY", "LILY", "VINE", "STEM", "SEED", "WEED", "BUD", "LAWN"]
+  },
+  { // 6+4+4+4+4+5+3+3+4+4+3+4 = 48 ✓
+    theme: "On the field",
+    spangram: "SPORTS",
+    words: ["GOAL", "BALL", "TEAM", "KICK", "SCORE", "WIN", "RUN", "PLAY", "GAME", "FAN", "PASS"]
+  },
+  { // 6+4+4+5+4+4+4+4+4+5+4 = 48 ✓
+    theme: "Musical",
+    spangram: "RHYTHM",
+    words: ["DRUM", "BASS", "PIANO", "TONE", "BEAT", "NOTE", "SONG", "TUNE", "CHORD", "JAZZ"]
+  },
+  { // 7+4+4+4+5+4+3+3+4+4+3+3 = 48 ✓
+    theme: "Weather report",
+    spangram: "CLIMATE",
+    words: ["RAIN", "SNOW", "WIND", "STORM", "HAIL", "FOG", "SUN", "GUST", "COLD", "ICE", "DEW"]
+  },
+  { // 6+3+4+5+4+4+3+4+4+4+3+4 = 48 ✓
+    theme: "Color palette",
+    spangram: "COLORS",
+    words: ["RED", "BLUE", "GREEN", "PINK", "GOLD", "TAN", "TEAL", "PLUM", "LIME", "ASH", "RUBY"]
+  },
+  { // 6+5+5+5+4+4+4+4+4+3+4 = 48 ✓
+    theme: "Ocean life",
+    spangram: "MARINE",
+    words: ["WHALE", "CORAL", "SHARK", "SEAL", "FISH", "KELP", "CRAB", "WAVE", "EEL", "REEF"]
+  },
+  { // 6+4+4+5+4+4+4+4+4+5+4 = 48 ✓
+    theme: "Space exploration",
+    spangram: "COSMOS",
+    words: ["STAR", "MARS", "ORBIT", "MOON", "NOVA", "VOID", "DUST", "RING", "COMET", "BEAM"]
+  }
+];
+
+// Validate puzzle sets at load time (dev check)
+for (const ps of PUZZLE_SETS) {
+  const total = ps.spangram.length + ps.words.reduce((s, w) => s + w.length, 0);
+  if (total !== TOTAL_CELLS) {
+    console.warn(`Puzzle "${ps.theme}" has ${total} letters, need ${TOTAL_CELLS}`);
+  }
+}
+
+// ──── URL PARAMETER SUPPORT ────
+// Custom puzzles are created via maker.html and passed as URL params.
+// Format: ?theme=...&spangram=...&words=WORD1,WORD2,...
+// The maker ensures words sum to exactly 48 letters.
+
+function parseURLPuzzle() {
+  const params = new URLSearchParams(window.location.search);
+  const theme = params.get('theme');
+  const spangram = params.get('spangram');
+  const wordsParam = params.get('words');
+  if (!theme || !spangram || !wordsParam) return null;
+  const words = wordsParam.split(',').map(w => w.trim().toUpperCase()).filter(w => w.length > 0);
+  return { theme, spangram: spangram.trim().toUpperCase(), words };
+}
+
+let customPuzzleSet = null;
+
+// ──── SEEDED PRNG ────
+
+function hashString(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  }
+  return h >>> 0;
+}
+
+function mulberry32(seed) {
+  let s = seed | 0;
+  return function() {
+    s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Global RNG — seeded before each generation
+let rng = Math.random;
+
+const DIRS = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function inBounds(r, c) { return r >= 0 && r < ROWS && c >= 0 && c < COLS; }
+
+function placeWord(grid, word, sr, sc, occupied) {
+  if (occupied.has(`${sr},${sc}`) || (grid[sr][sc] !== null && grid[sr][sc] !== word[0])) return null;
+
+  const path = [[sr, sc]];
+  const used = new Set([`${sr},${sc}`]);
+  let steps = 0;
+  const maxSteps = 10000;
+
+  function backtrack(idx) {
+    if (++steps > maxSteps) return false;
+    if (idx === word.length) return true;
+    const [r, c] = path[path.length - 1];
+    const dirs = shuffle([...DIRS]);
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr, nc = c + dc;
+      const key = `${nr},${nc}`;
+      if (!inBounds(nr, nc) || used.has(key) || occupied.has(key)) continue;
+      if (grid[nr][nc] !== null && grid[nr][nc] !== word[idx]) continue;
+      path.push([nr, nc]);
+      used.add(key);
+      if (backtrack(idx + 1)) return true;
+      path.pop();
+      used.delete(key);
+    }
+    return false;
+  }
+
+  const origFirst = grid[sr][sc];
+  grid[sr][sc] = word[0];
+  if (backtrack(1)) {
+    for (let i = 0; i < word.length; i++) {
+      grid[path[i][0]][path[i][1]] = word[i];
+    }
+    return path;
+  }
+  grid[sr][sc] = origFirst;
+  return null;
+}
+
+function placeSpangram(grid, word, occupied, minWordLen) {
+  function spans(path) {
+    const cols = path.map(p => p[1]);
+    if (cols.includes(0) && cols.includes(COLS - 1)) return true;
+    const rows = path.map(p => p[0]);
+    return rows.includes(0) && rows.includes(ROWS - 1);
+  }
+
+  function islandOk(path) {
+    const tempOcc = new Set(occupied);
+    for (const [r, c] of path) tempOcc.add(`${r},${c}`);
+    const regions = getEmptyRegionSizes(tempOcc);
+    return !regions.some(sz => sz > 0 && sz < minWordLen);
+  }
+
+  const startCols = [0, COLS - 1];
+
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const sc = startCols[Math.floor(rng() * 2)];
+    const sr = Math.floor(rng() * ROWS);
+    const path = placeWord(grid, word, sr, sc, occupied);
+    if (path) {
+      if (spans(path) && islandOk(path)) return path;
+      for (const [r, c] of path) grid[r][c] = null;
+    }
+  }
+  // Fallback: place anywhere
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const sr = Math.floor(rng() * ROWS);
+    const sc = Math.floor(rng() * COLS);
+    const path = placeWord(grid, word, sr, sc, occupied);
+    if (path) {
+      if (islandOk(path)) return path;
+      for (const [r, c] of path) grid[r][c] = null;
+    }
+  }
+  return null;
+}
+
+// Check if two path segments visually cross on the grid.
+// Two diagonal moves cross if they form an X in the same 2x2 block:
+//   A goes (r,c)->(r+1,c+1) and B goes (r,c+1)->(r+1,c) or vice versa.
+// Also catches general segment intersections for non-diagonal moves.
+function segmentsIntersect(r1,c1,r2,c2,r3,c3,r4,c4) {
+  // Both segments must be diagonal (±1 in both row and col) to form an X
+  const dr1 = r2 - r1, dc1 = c2 - c1;
+  const dr2 = r4 - r3, dc2 = c4 - c3;
+  if (Math.abs(dr1) === 1 && Math.abs(dc1) === 1 &&
+      Math.abs(dr2) === 1 && Math.abs(dc2) === 1) {
+    // They cross if they share the same 2x2 block and go in opposite diagonal directions
+    const minR1 = Math.min(r1, r2), minC1 = Math.min(c1, c2);
+    const minR2 = Math.min(r3, r4), minC2 = Math.min(c3, c4);
+    if (minR1 === minR2 && minC1 === minC2) {
+      // Same 2x2 block — cross if opposite diagonals
+      if (dr1 * dc1 !== dr2 * dc2) return true;
+    }
+    return false;
+  }
+  // General case for non-diagonal segments (rare on grid but handle it)
+  const d1 = (r4-r3)*(c1-c3) - (c4-c3)*(r1-r3);
+  const d2 = (r4-r3)*(c2-c3) - (c4-c3)*(r2-r3);
+  const d3 = (r2-r1)*(c3-c1) - (c2-c1)*(r3-r1);
+  const d4 = (r2-r1)*(c4-c1) - (c2-c1)*(r4-r1);
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+      ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return true;
+  return false;
+}
+
+// Find connected regions of empty cells via flood fill.
+// Returns array of region sizes.
+function getEmptyRegionSizes(occupied) {
+  const visited = new Set();
+  const sizes = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const key = `${r},${c}`;
+      if (occupied.has(key) || visited.has(key)) continue;
+      // BFS flood fill
+      let size = 0;
+      const queue = [[r, c]];
+      visited.add(key);
+      while (queue.length > 0) {
+        const [cr, cc] = queue.pop();
+        size++;
+        for (const [dr, dc] of DIRS) {
+          const nr = cr + dr, nc = cc + dc;
+          const nk = `${nr},${nc}`;
+          if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS &&
+              !occupied.has(nk) && !visited.has(nk)) {
+            visited.add(nk);
+            queue.push([nr, nc]);
+          }
+        }
+      }
+      sizes.push(size);
+    }
+  }
+  return sizes;
+}
+
+function tryGenerateOnce(puzzleSet) {
+  const { theme, spangram, words: themeWords } = puzzleSet;
+  const grid = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+  const occupied = new Set();
+  const wordPaths = {};
+
+  const minWordLen = Math.min(...themeWords.map(w => w.length));
+  const spanPath = placeSpangram(grid, spangram, occupied, minWordLen);
+  if (!spanPath) return null;
+  wordPaths[spangram] = spanPath;
+  for (const [r, c] of spanPath) occupied.add(`${r},${c}`);
+
+  // Sort words longest first — harder words placed first when grid is more open
+  const sortedWords = [...themeWords].sort((a, b) => b.length - a.length);
+  const shuffledWords = shuffle(sortedWords);
+
+  for (let wi = 0; wi < shuffledWords.length; wi++) {
+    const word = shuffledWords[wi];
+    // Smallest remaining word length (after this one is placed)
+    const remainingAfter = shuffledWords.slice(wi + 1);
+    const minRemaining = remainingAfter.length > 0 ? Math.min(...remainingAfter.map(w => w.length)) : 0;
+
+    let placed = false;
+    // Prefer starting from cells adjacent to already-occupied cells
+    const borderCells = [];
+    const innerCells = [];
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (occupied.has(`${r},${c}`)) continue;
+        let adjToOccupied = false;
+        for (const [dr, dc] of DIRS) {
+          if (occupied.has(`${r+dr},${c+dc}`)) { adjToOccupied = true; break; }
+        }
+        if (adjToOccupied) borderCells.push([r, c]);
+        else innerCells.push([r, c]);
+      }
+    }
+    const starts = [...shuffle(borderCells), ...shuffle(innerCells)];
+    for (let si = 0; si < starts.length; si++) {
+      const [sr, sc] = starts[si];
+      const path = placeWord(grid, word, sr, sc, occupied);
+      if (path) {
+        // Temporarily add to occupied and check for bad islands
+        for (const [r, c] of path) occupied.add(`${r},${c}`);
+
+        // Check: every empty region must be >= minRemaining letters
+        const regions = getEmptyRegionSizes(occupied);
+        const bad = regions.some(sz => sz > 0 && sz < minRemaining);
+
+        if (bad) {
+          // Undo — this placement creates an unfillable island
+          for (const [r, c] of path) {
+            occupied.delete(`${r},${c}`);
+            grid[r][c] = null;
+          }
+          continue;
+        }
+
+        wordPaths[word] = path;
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) return null;
+  }
+
+  // Check all cells filled
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      if (grid[r][c] === null) return null;
+
+  return { grid, theme, spangram, themeWords: shuffledWords, wordPaths };
+}
+
+// ──── PASS 2: STRAIGHTEN PATHS ────
+// For each word, find a Hamiltonian path through its cells that doesn't
+// cross itself OR any other word's path segments. Reassign letters along
+// the new path.
+
+function straightenPaths(result) {
+  const { grid, spangram, themeWords, wordPaths } = result;
+  const allWords = [spangram, ...themeWords];
+
+  // Collect all path segments from all words (for inter-word crossing checks).
+  // We'll rebuild this as we straighten each word.
+  // Each segment: [r1, c1, r2, c2, wordIndex]
+  const allSegments = [];
+  for (let wi = 0; wi < allWords.length; wi++) {
+    const p = wordPaths[allWords[wi]];
+    for (let i = 0; i < p.length - 1; i++) {
+      allSegments.push([p[i][0], p[i][1], p[i+1][0], p[i+1][1], wi]);
+    }
+  }
+
+  for (let wi = 0; wi < allWords.length; wi++) {
+    const word = allWords[wi];
+    const cells = wordPaths[word];
+    const n = cells.length;
+    if (n <= 2) continue;
+
+    // Collect segments from OTHER words (already finalized)
+    const otherSegs = allSegments.filter(s => s[4] !== wi);
+
+    // Build adjacency
+    const cellIdx = {};
+    for (let i = 0; i < n; i++) cellIdx[`${cells[i][0]},${cells[i][1]}`] = i;
+    const adj = Array.from({length: n}, () => []);
+    for (let i = 0; i < n; i++) {
+      const [r, c] = cells[i];
+      for (const [dr, dc] of DIRS) {
+        const k = `${r+dr},${c+dc}`;
+        if (k in cellIdx) adj[i].push(cellIdx[k]);
+      }
+    }
+
+    const path = new Array(n);
+    const idxPath = new Array(n);
+    const used = new Uint8Array(n);
+    let found = false;
+    let steps = 0;
+    const maxSteps = 10000;
+
+    function crossesAnything(pr, pc, nr, nc, depth) {
+      // Check against own earlier segments
+      for (let k = 0; k < depth - 1; k++) {
+        if (segmentsIntersect(pr, pc, nr, nc,
+            path[k][0], path[k][1], path[k+1][0], path[k+1][1])) {
+          return true;
+        }
+      }
+      // Check against other words' segments
+      for (let k = 0; k < otherSegs.length; k++) {
+        const s = otherSegs[k];
+        if (segmentsIntersect(pr, pc, nr, nc, s[0], s[1], s[2], s[3])) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function dfs(depth) {
+      if (found || steps > maxSteps) return;
+      steps++;
+      if (depth === n) { found = true; return; }
+      const ci = idxPath[depth - 1];
+      const nbs = adj[ci];
+      const pr = path[depth - 1][0], pc = path[depth - 1][1];
+      // Try non-crossing moves first (pass 0), then allow crossing (pass 1)
+      for (let pass = 0; pass < 2 && !found; pass++) {
+        for (let j = 0; j < nbs.length && !found; j++) {
+          const ni = nbs[j];
+          if (used[ni]) continue;
+          const nr = cells[ni][0], nc = cells[ni][1];
+          const crosses = crossesAnything(pr, pc, nr, nc, depth);
+          if (pass === 0 && crosses) continue;
+          if (pass === 1 && !crosses) continue;
+          path[depth] = cells[ni];
+          idxPath[depth] = ni;
+          used[ni] = 1;
+          dfs(depth + 1);
+          used[ni] = 0;
+        }
+      }
+    }
+
+    for (let si = 0; si < n && !found && steps <= maxSteps; si++) {
+      path[0] = cells[si];
+      idxPath[0] = si;
+      used.fill(0);
+      used[si] = 1;
+      dfs(1);
+    }
+
+    if (found) {
+      // Remove old segments for this word, add new ones
+      for (let i = allSegments.length - 1; i >= 0; i--) {
+        if (allSegments[i][4] === wi) allSegments.splice(i, 1);
+      }
+      const newPath = [];
+      for (let i = 0; i < n; i++) newPath.push(path[i]);
+      wordPaths[word] = newPath;
+      for (let i = 0; i < n; i++) {
+        grid[newPath[i][0]][newPath[i][1]] = word[i];
+      }
+      for (let i = 0; i < n - 1; i++) {
+        allSegments.push([newPath[i][0], newPath[i][1], newPath[i+1][0], newPath[i+1][1], wi]);
+      }
+    }
+  }
+
+  return result;
+}
+
+// Count total inter-word and self crossings in a result
+function countAllCrossings(wordPaths, allWords) {
+  // Build all segments: [r1, c1, r2, c2, wordIndex]
+  const segs = [];
+  for (let wi = 0; wi < allWords.length; wi++) {
+    const p = wordPaths[allWords[wi]];
+    for (let i = 0; i < p.length - 1; i++) {
+      segs.push([p[i][0], p[i][1], p[i+1][0], p[i+1][1], wi]);
+    }
+  }
+  let crossings = 0;
+  for (let i = 0; i < segs.length; i++) {
+    for (let j = i + 1; j < segs.length; j++) {
+      // Skip consecutive segments of the same word (they share an endpoint)
+      if (segs[i][4] === segs[j][4]) {
+        const a = segs[i], b = segs[j];
+        // Check if they share an endpoint (consecutive) — skip those
+        if ((a[0] === b[0] && a[1] === b[1]) || (a[0] === b[2] && a[1] === b[3]) ||
+            (a[2] === b[0] && a[3] === b[1]) || (a[2] === b[2] && a[3] === b[3])) continue;
+      }
+      if (segmentsIntersect(segs[i][0], segs[i][1], segs[i][2], segs[i][3],
+                             segs[j][0], segs[j][1], segs[j][2], segs[j][3])) {
+        crossings++;
+      }
+    }
+  }
+  return crossings;
+}
+
+// Generate puzzle
+function generatePuzzle() {
+  const puzzleSet = customPuzzleSet || PUZZLE_SETS[Math.floor(Math.random() * PUZZLE_SETS.length)];
+  const seedStr = puzzleSet.theme + '|' + puzzleSet.spangram + '|' + puzzleSet.words.join(',');
+  rng = mulberry32(hashString(seedStr));
+
+  const t0 = performance.now();
+  const deadline = t0 + 5000; // 5 second max
+
+  let attempts = 0;
+  let bestResult = null;
+  let bestCrossings = Infinity;
+
+  for (let attempt = 0; attempt < 5000; attempt++) {
+    if (performance.now() > deadline) {
+      console.log(`generatePuzzle: hit deadline after ${attempts} attempts, ${(performance.now()-t0).toFixed(0)}ms`);
+      break;
+    }
+    attempts++;
+    const result = tryGenerateOnce(puzzleSet);
+    if (result) {
+      const straightened = straightenPaths(result);
+      const allWords = [straightened.spangram, ...straightened.themeWords];
+      const crossings = countAllCrossings(straightened.wordPaths, allWords);
+      console.log(`generatePuzzle: attempt ${attempts} succeeded, ${crossings} crossings`);
+      if (crossings === 0) {
+        console.log(`generatePuzzle: perfect in ${(performance.now()-t0).toFixed(0)}ms`);
+        return straightened;
+      }
+      if (crossings < bestCrossings) {
+        bestCrossings = crossings;
+        bestResult = straightened;
+      }
+    }
+  }
+
+  if (bestResult) {
+    console.log(`generatePuzzle: best has ${bestCrossings} crossings after ${attempts} attempts in ${(performance.now()-t0).toFixed(0)}ms`);
+    return bestResult;
+  }
+
+  // Custom puzzle failed — fall back to built-in
+  if (customPuzzleSet) {
+    console.warn('Custom puzzle failed to generate after ' + attempts + ' attempts, using built-in');
+    setTimeout(() => {
+      document.getElementById('message').textContent =
+        'Custom puzzle failed to generate — using a built-in instead. Try the Puzzle Maker to debug.';
+    }, 100);
+    customPuzzleSet = null;
+  }
+
+  // Try built-in puzzles until one works
+  for (let i = 0; i < PUZZLE_SETS.length; i++) {
+    if (performance.now() > deadline) break;
+    const ps = PUZZLE_SETS[(Math.floor(Math.random() * PUZZLE_SETS.length) + i) % PUZZLE_SETS.length];
+    rng = mulberry32(hashString(ps.theme + '|' + ps.spangram + '|' + ps.words.join(',')));
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (performance.now() > deadline) break;
+      const result = tryGenerateOnce(ps);
+      if (result) {
+        console.log(`generatePuzzle: fallback success in ${(performance.now()-t0).toFixed(0)}ms`);
+        return straightenPaths(result);
+      }
+    }
+  }
+
+  console.log(`generatePuzzle: all failed in ${(performance.now()-t0).toFixed(0)}ms`);
+  return null;
+}
+
+// ──── GAME STATE ────
+
+let puzzle, selectedCells, foundWords, foundPaths;
+let nonThemeWordsFound, hintsUsed, hintedCells, activeHintWord;
+let gameWon = false;
+
+function getHintCredits() {
+  return Math.floor(nonThemeWordsFound.length / 3) - hintsUsed;
+}
+
+function newGame() {
+  puzzle = generatePuzzle();
+  if (!puzzle) {
+    document.getElementById('message').textContent =
+      'Could not generate puzzle. Try different words or reload.';
+    return;
+  }
+  selectedCells = [];
+  foundWords = new Set();
+  foundPaths = {};
+  nonThemeWordsFound = [];
+  hintsUsed = 0;
+  hintedCells = new Set();
+  activeHintWord = null;
+  gameWon = false;
+  sizeBoardToFit();
+  render();
+  renderDebug();
+}
+
+// ──── SIZING ────
+
+let cellSize = 52;
+
+function sizeBoardToFit() {
+  const headerH = 80;   // header + theme
+  const wordDispH = 30;
+  const statusH = 26;
+  const msgH = 26;
+  const controlsH = 44;
+  const foundWordsH = 60;
+  const padding = 40;
+  const chrome = headerH + wordDispH + statusH + msgH + controlsH + foundWordsH + padding;
+  const availH = window.innerHeight - chrome;
+  const availW = window.innerWidth - 40; // margins
+
+  const maxCellByH = Math.floor((availH - (ROWS - 1) * 3) / ROWS);
+  const maxCellByW = Math.floor((availW - (COLS - 1) * 3) / COLS);
+  cellSize = Math.min(maxCellByH, maxCellByW, 56);
+  cellSize = Math.max(cellSize, 32); // minimum
+}
+
+// ──── RENDERING ────
+
+function render() {
+  document.getElementById('themeHint').textContent = puzzle.theme;
+  renderBoard();
+  renderFoundWords();
+  updateWordDisplay();
+  drawLines();
+  updateHintUI();
+  document.getElementById('message').textContent = '';
+}
+
+function renderBoard() {
+  const board = document.getElementById('board');
+  board.style.gridTemplateColumns = `repeat(${COLS}, ${cellSize}px)`;
+  board.style.gap = '3px';
+  board.innerHTML = '';
+
+  const fontSize = Math.max(Math.floor(cellSize * 0.38), 13);
+
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.textContent = puzzle.grid[r][c];
+      cell.dataset.row = r;
+      cell.dataset.col = c;
+      cell.style.width = cellSize + 'px';
+      cell.style.height = cellSize + 'px';
+      cell.style.fontSize = fontSize + 'px';
+
+      for (const [word, path] of Object.entries(foundPaths)) {
+        if (path.some(([pr, pc]) => pr === r && pc === c)) {
+          cell.classList.add(word === puzzle.spangram ? 'found-spangram' : 'found-theme');
+        }
+      }
+
+      if (hintedCells.has(`${r},${c}`)) {
+        cell.classList.add('hint-glow');
+      }
+
+      if (selectedCells.some(([sr, sc]) => sr === r && sc === c)) {
+        cell.classList.add('selected');
+      }
+
+      cell.addEventListener('pointerdown', (e) => onPointerDown(r, c, e));
+      cell.addEventListener('pointerenter', (e) => onPointerEnter(r, c, e));
+      board.appendChild(cell);
+    }
+  }
+}
+
+function getCellCenter(r, c) {
+  const board = document.getElementById('board');
+  const cell = board.children[r * COLS + c];
+  const boardRect = document.getElementById('boardContainer').getBoundingClientRect();
+  const cellRect = cell.getBoundingClientRect();
+  return {
+    x: cellRect.left + cellRect.width / 2 - boardRect.left,
+    y: cellRect.top + cellRect.height / 2 - boardRect.top
+  };
+}
+
+function drawLines() {
+  const svg = document.getElementById('linesSvg');
+  svg.innerHTML = '';
+  const sw = Math.max(Math.floor(cellSize * 0.1), 3);
+
+  for (const [word, path] of Object.entries(foundPaths)) {
+    const color = word === puzzle.spangram ? '#d4b030' : '#4a90d9';
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = getCellCenter(path[i][0], path[i][1]);
+      const b = getCellCenter(path[i + 1][0], path[i + 1][1]);
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
+      line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
+      line.style.stroke = color;
+      line.style.opacity = '0.3';
+      line.style.strokeWidth = sw;
+      line.style.strokeLinecap = 'round';
+      svg.appendChild(line);
+    }
+  }
+
+  for (let i = 0; i < selectedCells.length - 1; i++) {
+    const a = getCellCenter(selectedCells[i][0], selectedCells[i][1]);
+    const b = getCellCenter(selectedCells[i + 1][0], selectedCells[i + 1][1]);
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
+    line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
+    line.style.strokeWidth = sw;
+    line.style.strokeLinecap = 'round';
+    svg.appendChild(line);
+  }
+}
+
+function renderFoundWords() {
+  const container = document.getElementById('foundWords');
+  container.innerHTML = '';
+  const allWords = [puzzle.spangram, ...puzzle.themeWords];
+  for (const word of allWords) {
+    const el = document.createElement('span');
+    if (foundWords.has(word)) {
+      el.className = 'found-word ' + (word === puzzle.spangram ? 'spangram' : 'theme');
+      el.textContent = word;
+    } else {
+      el.className = 'found-word placeholder';
+      el.textContent = word.replace(/./g, '?');
+    }
+    container.appendChild(el);
+  }
+}
+
+function updateWordDisplay() {
+  const display = document.getElementById('wordDisplay');
+  display.textContent = selectedCells.map(([r, c]) => puzzle.grid[r][c]).join('');
+}
+
+function updateHintUI() {
+  const btn = document.getElementById('hintBtn');
+  const progress = document.getElementById('hintProgress');
+  const dotsEl = document.getElementById('hintDots');
+  const creditsEl = document.getElementById('hintCreditsDisplay');
+
+  // Show dots for progress toward next hint (0-2 filled out of 3)
+  const progressCount = nonThemeWordsFound.length % 3;
+  dotsEl.innerHTML = '';
+  for (let i = 0; i < 3; i++) {
+    const dot = document.createElement('div');
+    dot.className = 'hint-dot' + (i < progressCount ? ' filled' : '');
+    dotsEl.appendChild(dot);
+  }
+
+  const credits = getHintCredits();
+  if (credits > 0) {
+    btn.disabled = false;
+    btn.textContent = `Hint (${credits})`;
+    creditsEl.textContent = `${credits} available`;
+  } else {
+    btn.disabled = true;
+    btn.textContent = 'Hint';
+    creditsEl.textContent = '';
+  }
+
+  if (nonThemeWordsFound.length === 0 && credits === 0) {
+    progress.textContent = 'Find non-theme words for hints';
+  } else if (credits === 0) {
+    const left = 3 - progressCount;
+    progress.textContent = `${left} more for next hint`;
+  } else {
+    progress.textContent = '';
+  }
+}
+
+// ──── INTERACTION (tap + drag) ────
+
+function isCellFound(r, c) {
+  for (const path of Object.values(foundPaths)) {
+    if (path.some(([pr, pc]) => pr === r && pc === c)) return true;
+  }
+  return false;
+}
+
+function isAdjacent(r1, c1, r2, c2) {
+  return Math.abs(r1 - r2) <= 1 && Math.abs(c1 - c2) <= 1 && !(r1 === r2 && c1 === c2);
+}
+
+// ── Interaction state ──
+let pointerIsDown = false;  // pointer is currently held down
+let dragStartedCell = null; // [r,c] where the pointer went down
+let hasDragged = false;     // did the pointer move to a different cell?
+
+function refreshUI() {
+  renderBoard();
+  updateWordDisplay();
+  drawLines();
+}
+
+// Click (tap) handler — called on pointerup when no drag occurred
+function handleTap(r, c) {
+  if (isCellFound(r, c)) return;
+
+  // Nothing selected yet — start a new word
+  if (selectedCells.length === 0) {
+    selectedCells = [[r, c]];
+    refreshUI();
+    return;
+  }
+
+  const lastIdx = selectedCells.length - 1;
+  const [lr, lc] = selectedCells[lastIdx];
+
+  // Tap the last selected cell again → submit the word
+  if (lr === r && lc === c) {
+    if (selectedCells.length > 1) {
+      submitWord();
+    } else {
+      // Only 1 cell selected, tapping it again deselects
+      selectedCells = [];
+      refreshUI();
+    }
+    return;
+  }
+
+  // Check if this cell is already in the selection
+  const existIdx = selectedCells.findIndex(([sr, sc]) => sr === r && sc === c);
+  if (existIdx >= 0) {
+    // Clicking an already-selected cell removes it and everything after it
+    selectedCells = selectedCells.slice(0, existIdx);
+    refreshUI();
+    return;
+  }
+
+  // Adjacent to last selected cell → extend the path
+  if (isAdjacent(lr, lc, r, c)) {
+    selectedCells.push([r, c]);
+    refreshUI();
+    return;
+  }
+
+  // Not adjacent → abandon current word, start new one
+  selectedCells = [[r, c]];
+  refreshUI();
+}
+
+function onPointerDown(r, c, e) {
+  e.preventDefault();
+  if (isCellFound(r, c)) return;
+
+  pointerIsDown = true;
+  dragStartedCell = [r, c];
+  hasDragged = false;
+
+  // For drag mode: immediately set up the selection start
+  // We'll figure out if it's a tap or drag in onPointerUp
+  // But we need to visually show the first cell immediately for drag feedback
+  // Save a snapshot so we can restore if it's just a tap
+}
+
+function onPointerEnter(r, c, e) {
+  if (!pointerIsDown) return;
+  if (isCellFound(r, c)) return;
+
+  // First move away from the starting cell — this is now a drag
+  if (!hasDragged) {
+    hasDragged = true;
+    // Start fresh drag selection from the original cell
+    const [sr, sc] = dragStartedCell;
+    selectedCells = [[sr, sc]];
+  }
+
+  // Backtrack: if entering the second-to-last cell, pop the last
+  const existIdx = selectedCells.findIndex(([sr, sc]) => sr === r && sc === c);
+  if (existIdx >= 0 && existIdx === selectedCells.length - 2) {
+    selectedCells.pop();
+    refreshUI();
+    return;
+  }
+  if (existIdx >= 0) return; // already in path, ignore
+
+  const [lr, lc] = selectedCells[selectedCells.length - 1];
+  if (!isAdjacent(lr, lc, r, c)) return;
+
+  selectedCells.push([r, c]);
+  refreshUI();
+}
+
+function onPointerUp(e) {
+  if (!pointerIsDown) return;
+  pointerIsDown = false;
+
+  if (hasDragged) {
+    // Drag ended — auto-submit if we have a word
+    hasDragged = false;
+    dragStartedCell = null;
+    if (selectedCells.length > 1) {
+      submitWord();
+    } else {
+      selectedCells = [];
+      refreshUI();
+    }
+  } else {
+    // No drag — this was a tap/click
+    const [r, c] = dragStartedCell;
+    dragStartedCell = null;
+    handleTap(r, c);
+  }
+}
+
+document.addEventListener('pointerup', onPointerUp);
+document.addEventListener('pointercancel', () => {
+  pointerIsDown = false;
+  hasDragged = false;
+  dragStartedCell = null;
+});
+
+// ──── SUBMIT / HINT LOGIC ────
+
+function submitWord() {
+  const word = selectedCells.map(([r, c]) => puzzle.grid[r][c]).join('');
+  const msg = document.getElementById('message');
+
+  if (foundWords.has(word)) {
+    flashInvalid();
+    msg.textContent = 'Already found!';
+    clearSelection();
+    return;
+  }
+
+  const allTargets = [puzzle.spangram, ...puzzle.themeWords];
+  if (allTargets.includes(word)) {
+    foundWords.add(word);
+    foundPaths[word] = [...selectedCells];
+    msg.textContent = word === puzzle.spangram ? 'Spangram!' : 'Found!';
+
+    for (const [r, c] of selectedCells) hintedCells.delete(`${r},${c}`);
+    if (activeHintWord === word) activeHintWord = null;
+
+    selectedCells = [];
+    renderBoard();
+    updateWordDisplay();
+    drawLines();
+    renderFoundWords();
+    renderDebug();
+
+    if (foundWords.size === allTargets.length) {
+      gameWon = true;
+      setTimeout(showWin, 500);
+    }
+    return;
+  }
+
+  // Check if it's a valid non-theme word (for hint credits)
+  if (word.length >= 3 && dictionary.has(word) && !nonThemeWordsFound.includes(word)) {
+    nonThemeWordsFound.push(word);
+    const progress = nonThemeWordsFound.length % 3;
+    if (progress === 0) {
+      msg.textContent = `"${word}" — Hint earned!`;
+    } else {
+      msg.textContent = `"${word}" — ${3 - progress} more for a hint`;
+    }
+    clearSelection();
+    updateHintUI();
+    return;
+  }
+
+  flashInvalid();
+  if (word.length < 3) {
+    msg.textContent = 'Too short';
+  } else if (nonThemeWordsFound.includes(word)) {
+    msg.textContent = 'Already used that word';
+  } else {
+    msg.textContent = 'Not a valid word';
+  }
+  clearSelection();
+}
+
+function useHint() {
+  if (getHintCredits() <= 0) return;
+
+  const allTargets = [puzzle.spangram, ...puzzle.themeWords];
+  const unhinted = allTargets.filter(w => !foundWords.has(w));
+  if (unhinted.length === 0) return;
+
+  let targetWord = activeHintWord;
+  if (!targetWord || foundWords.has(targetWord)) {
+    targetWord = unhinted[0];
+  }
+  activeHintWord = targetWord;
+
+  const path = puzzle.wordPaths[targetWord];
+  const unhintedCells = path.filter(([r, c]) => !hintedCells.has(`${r},${c}`));
+  if (unhintedCells.length === 0) {
+    const nextWord = unhinted.find(w => w !== targetWord);
+    if (!nextWord) return;
+    activeHintWord = nextWord;
+    const nextPath = puzzle.wordPaths[nextWord];
+    hintedCells.add(`${nextPath[0][0]},${nextPath[0][1]}`);
+  } else {
+    hintedCells.add(`${unhintedCells[0][0]},${unhintedCells[0][1]}`);
+  }
+
+  hintsUsed++;
+  renderBoard();
+  updateHintUI();
+  document.getElementById('message').textContent = 'Hint revealed!';
+}
+
+function showWin() {
+  document.getElementById('winStats').textContent =
+    `You found all ${foundWords.size} words!`;
+  document.getElementById('winOverlay').classList.remove('hidden');
+}
+
+function flashInvalid() {
+  for (const [r, c] of selectedCells) {
+    const board = document.getElementById('board');
+    const cell = board.children[r * COLS + c];
+    cell.classList.add('invalid-flash');
+    setTimeout(() => cell.classList.remove('invalid-flash'), 400);
+  }
+}
+
+function clearSelection() {
+  selectedCells = [];
+  renderBoard();
+  updateWordDisplay();
+  drawLines();
+}
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  window.location.reload();
+});
+
+document.getElementById('submitBtn').addEventListener('click', () => {
+  if (selectedCells.length > 1) submitWord();
+});
+
+document.getElementById('hintBtn').addEventListener('click', useHint);
+
+document.getElementById('newGameBtn').addEventListener('click', () => {
+  window.location.href = window.location.pathname;
+});
+
+document.getElementById('winViewBoard').addEventListener('click', () => {
+  document.getElementById('winOverlay').classList.add('hidden');
+});
+
+document.getElementById('winNewGame').addEventListener('click', () => {
+  window.location.href = window.location.pathname;
+});
+
+window.addEventListener('resize', () => {
+  if (!puzzle) return;
+  sizeBoardToFit();
+  renderBoard();
+  drawLines();
+});
+
+// ──── DEBUG PANEL ────
+
+function renderDebug() {
+  const allWords = [puzzle.spangram, ...puzzle.themeWords];
+  const total = allWords.reduce((s, w) => s + w.length, 0);
+  const countEl = document.getElementById('debugLetterCount');
+  countEl.textContent = `Letters: ${total}/${TOTAL_CELLS}` + (total !== TOTAL_CELLS ? ' ⚠' : ' ✓');
+  countEl.style.color = total === TOTAL_CELLS ? '#6a6' : '#f66';
+
+  const noteEl = document.getElementById('debugCustomNote');
+  noteEl.textContent = customPuzzleSet ? 'Source: URL params' : 'Source: built-in';
+}
+
+document.getElementById('debugRevealBtn').addEventListener('click', () => {
+  const allTargets = [puzzle.spangram, ...puzzle.themeWords];
+  const next = allTargets.find(w => !foundWords.has(w));
+  if (!next) return;
+
+  foundWords.add(next);
+  foundPaths[next] = [...puzzle.wordPaths[next]];
+  for (const [r, c] of puzzle.wordPaths[next]) hintedCells.delete(`${r},${c}`);
+
+  selectedCells = [];
+  renderBoard();
+  updateWordDisplay();
+  drawLines();
+  renderFoundWords();
+  renderDebug();
+  document.getElementById('message').textContent = `Revealed: ${next}`;
+
+  if (foundWords.size === allTargets.length) {
+    gameWon = true;
+    setTimeout(showWin, 500);
+  }
+});
+
+document.getElementById('debugRevealAllBtn').addEventListener('click', () => {
+  const allTargets = [puzzle.spangram, ...puzzle.themeWords];
+  for (const word of allTargets) {
+    if (!foundWords.has(word)) {
+      foundWords.add(word);
+      foundPaths[word] = [...puzzle.wordPaths[word]];
+    }
+  }
+  hintedCells.clear();
+  selectedCells = [];
+  renderBoard();
+  updateWordDisplay();
+  drawLines();
+  renderFoundWords();
+  renderDebug();
+  document.getElementById('message').textContent = 'All words revealed';
+  gameWon = true;
+  setTimeout(showWin, 500);
+});
+
+document.getElementById('debugNonThemeBtn').addEventListener('click', () => {
+  nonThemeWordsFound.push('DEBUG');
+  updateHintUI();
+  const credits = getHintCredits();
+  document.getElementById('message').textContent =
+    `Non-theme words: ${nonThemeWordsFound.length}, credits: ${credits}`;
+});
+
+document.getElementById('debugToggle').addEventListener('click', () => {
+  const panel = document.getElementById('debugPanel');
+  const btn = document.getElementById('debugToggle');
+  panel.classList.toggle('collapsed');
+  btn.textContent = panel.classList.contains('collapsed') ? 'show' : 'hide';
+});
+
+// ──── START ────
+initDictionary();
+
+// Check for custom puzzle from URL (created by maker.html)
+const urlPuzzle = parseURLPuzzle();
+if (urlPuzzle) {
+  customPuzzleSet = {
+    theme: urlPuzzle.theme,
+    spangram: urlPuzzle.spangram,
+    words: urlPuzzle.words
+  };
+}
+
+newGame();
+</script>
+</body>
+</html>

@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stranded — Puzzle Maker</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    background: #f8f8f8;
+    color: #222;
+    padding: 24px;
+    max-width: 700px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    color: #888;
+    font-size: 14px;
+    margin-bottom: 24px;
+  }
+  .subtitle a { color: #4a90d9; }
+
+  .form-group {
+    margin-bottom: 16px;
+  }
+  label {
+    display: block;
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 4px;
+    color: #444;
+  }
+  label .hint {
+    font-weight: 400;
+    color: #999;
+    font-size: 12px;
+  }
+  input[type="text"], textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    font-size: 15px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input[type="text"]:focus, textarea:focus {
+    border-color: #4a90d9;
+  }
+  textarea {
+    height: 80px;
+    resize: vertical;
+  }
+
+  .stats {
+    background: #fff;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    line-height: 1.8;
+  }
+  .stats .ok { color: #2a7a2a; }
+  .stats .warn { color: #b87a00; }
+  .stats .err { color: #c33; }
+  .stats .info { color: #4a90d9; }
+  .stats .muted { color: #999; }
+
+  .buttons {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  button {
+    padding: 10px 24px;
+    border: 2px solid #ccc;
+    border-radius: 24px;
+    background: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  button:hover { background: #f0f0f0; }
+  button.primary {
+    background: #4a90d9;
+    color: #fff;
+    border-color: #4a90d9;
+  }
+  button.primary:hover { background: #3a7ac0; }
+  button.success {
+    background: #2a7a2a;
+    color: #fff;
+    border-color: #2a7a2a;
+  }
+  button.success:hover { background: #1f6a1f; }
+  button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  .gen-log {
+    background: #1a1a2e;
+    color: #e0e0e0;
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    max-height: 300px;
+    overflow-y: auto;
+    margin-bottom: 16px;
+  }
+  .gen-log:empty { display: none; }
+  .gen-log .log-ok { color: #6c6; }
+  .gen-log .log-fail { color: #e66; }
+  .gen-log .log-info { color: #6be; }
+  .gen-log .log-warn { color: #ec6; }
+  .gen-log .log-muted { color: #666; }
+
+  .link-output {
+    background: #fff;
+    border: 2px solid #2a7a2a;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    word-break: break-all;
+    font-size: 13px;
+    font-family: monospace;
+    line-height: 1.5;
+  }
+  .link-output:empty { display: none; }
+  .link-output a { color: #4a90d9; }
+  .link-output .copy-note {
+    display: block;
+    margin-top: 8px;
+    font-family: inherit;
+    font-size: 12px;
+    color: #888;
+  }
+
+  .preview-section {
+    margin-bottom: 16px;
+  }
+  .preview-section h3 {
+    font-size: 14px;
+    margin-bottom: 8px;
+    color: #444;
+  }
+  .preview-grid {
+    display: inline-grid;
+    gap: 3px;
+    background: #fff;
+    padding: 8px;
+    border-radius: 8px;
+    border: 2px solid #e0e0e0;
+  }
+  .preview-cell {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+    border-radius: 50%;
+    background: #f0f0f0;
+  }
+  .preview-cell.spangram { background: #f0d060; color: #6a5a10; }
+  .preview-cell.theme { background: #b8d4f0; color: #2a5a8a; }
+
+  .word-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .word-chip {
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 1px;
+  }
+  .word-chip.spangram { background: #f0d060; color: #6a5a10; }
+  .word-chip.theme { background: #b8d4f0; color: #2a5a8a; }
+  .word-chip.padded { border: 2px dashed #b87a00; }
+</style>
+</head>
+<body>
+
+<h1>Puzzle Maker</h1>
+<p class="subtitle">Build a custom Stranded puzzle. <a href="index.html">Play the game</a></p>
+
+<div class="form-group">
+  <label>Theme <span class="hint">The clue shown to the player</span></label>
+  <input type="text" id="themeInput" placeholder="e.g. Tropical fruit" value="">
+</div>
+
+<div class="form-group">
+  <label>Spangram <span class="hint">Spans the board, highlighted yellow. Not modified.</span></label>
+  <input type="text" id="spangramInput" placeholder="e.g. FRUITY" value="">
+</div>
+
+<div class="form-group">
+  <label>Theme Words <span class="hint">Comma-separated. May be pluralized/past-tensed to fit 48 letters.</span></label>
+  <textarea id="wordsInput" placeholder="e.g. APPLE, PEAR, PLUM, GRAPE, LIME, FIG, MANGO, KIWI"></textarea>
+</div>
+
+<div class="stats" id="stats"></div>
+
+<div class="buttons">
+  <button class="primary" id="testBtn">Test Generate</button>
+  <button class="success" id="linkBtn" disabled>Generate Link</button>
+</div>
+
+<div class="gen-log" id="genLog"></div>
+
+<div class="preview-section" id="previewSection" style="display:none">
+  <h3>Preview</h3>
+  <div class="preview-grid" id="previewGrid"></div>
+  <div class="word-chips" id="previewChips"></div>
+</div>
+
+<div class="link-output" id="linkOutput"></div>
+
+<script>
+const ROWS = 8;
+const COLS = 6;
+const TOTAL_CELLS = ROWS * COLS;
+const DIRS = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+function inBounds(r, c) { return r >= 0 && r < ROWS && c >= 0 && c < COLS; }
+
+function placeWord(grid, word, sr, sc, occupied) {
+  if (occupied.has(`${sr},${sc}`) || (grid[sr][sc] !== null && grid[sr][sc] !== word[0])) return null;
+  const path = [[sr, sc]];
+  const used = new Set([`${sr},${sc}`]);
+  function backtrack(idx) {
+    if (idx === word.length) return true;
+    const [r, c] = path[path.length - 1];
+    const dirs = shuffle([...DIRS]);
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr, nc = c + dc;
+      const key = `${nr},${nc}`;
+      if (!inBounds(nr, nc) || used.has(key) || occupied.has(key)) continue;
+      if (grid[nr][nc] !== null && grid[nr][nc] !== word[idx]) continue;
+      path.push([nr, nc]);
+      used.add(key);
+      if (backtrack(idx + 1)) return true;
+      path.pop();
+      used.delete(key);
+    }
+    return false;
+  }
+  const origFirst = grid[sr][sc];
+  grid[sr][sc] = word[0];
+  if (backtrack(1)) {
+    for (let i = 0; i < word.length; i++) grid[path[i][0]][path[i][1]] = word[i];
+    return path;
+  }
+  grid[sr][sc] = origFirst;
+  return null;
+}
+
+function placeSpangram(grid, word, occupied) {
+  const startCols = [0, COLS - 1];
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const sc = startCols[Math.floor(Math.random() * 2)];
+    const sr = Math.floor(Math.random() * ROWS);
+    const path = placeWord(grid, word, sr, sc, occupied);
+    if (path) {
+      const cols = path.map(p => p[1]);
+      if (cols.includes(0) && cols.includes(COLS - 1)) return path;
+      const rows = path.map(p => p[0]);
+      if (rows.includes(0) && rows.includes(ROWS - 1)) return path;
+      for (const [r, c] of path) grid[r][c] = null;
+    }
+  }
+  for (let attempt = 0; attempt < 300; attempt++) {
+    const sr = Math.floor(Math.random() * ROWS);
+    const sc = Math.floor(Math.random() * COLS);
+    const path = placeWord(grid, word, sr, sc, occupied);
+    if (path) return path;
+  }
+  return null;
+}
+
+function tryGenerateOnce(spangram, words) {
+  const grid = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+  const occupied = new Set();
+  const wordPaths = {};
+
+  const spanPath = placeSpangram(grid, spangram, occupied);
+  if (!spanPath) return { result: null, failedAt: 'spangram' };
+  wordPaths[spangram] = spanPath;
+  for (const [r, c] of spanPath) occupied.add(`${r},${c}`);
+
+  const shuffled = shuffle([...words]);
+  for (const word of shuffled) {
+    let placed = false;
+    const starts = shuffle(Array.from({ length: ROWS * COLS }, (_, i) => [Math.floor(i / COLS), i % COLS]));
+    for (const [sr, sc] of starts) {
+      const path = placeWord(grid, word, sr, sc, occupied);
+      if (path) {
+        wordPaths[word] = path;
+        for (const [r, c] of path) occupied.add(`${r},${c}`);
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) return { result: null, failedAt: word };
+  }
+
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      if (grid[r][c] === null) return { result: null, failedAt: 'unfilled cells' };
+
+  return { result: { grid, wordPaths }, failedAt: null };
+}
+
+// ──── PADDING ────
+
+function padToTarget(spangram, words) {
+  let total = spangram.length + words.reduce((s, w) => s + w.length, 0);
+  if (total === TOTAL_CELLS) return { words: [...words], changes: [] };
+  const result = [...words];
+  const originals = [...words];
+  const expanded = new Array(words.length).fill(false);
+  const changes = [];
+  let remaining = TOTAL_CELLS - total;
+  if (remaining < 0) return { words: result, changes: [`Over by ${-remaining} letters — remove some words`] };
+
+  for (let i = 0; i < result.length && remaining > 0; i++) {
+    const w = originals[i];
+    if ('SXZ'.includes(w[w.length - 1])) continue;
+    result[i] = w + 'S'; expanded[i] = true; remaining -= 1;
+    changes.push(`${w} → ${result[i]}`);
+  }
+  for (let i = 0; i < result.length && remaining > 0; i++) {
+    if (expanded[i]) continue;
+    const w = originals[i];
+    if (remaining >= 2 && 'SXZ'.includes(w[w.length - 1])) {
+      result[i] = w + 'ES'; expanded[i] = true; remaining -= 2;
+    } else if (remaining >= 2) {
+      result[i] = w + 'ED'; expanded[i] = true; remaining -= 2;
+    }
+    changes.push(`${w} → ${result[i]}`);
+  }
+  for (let i = 0; i < result.length && remaining > 0; i++) {
+    if (expanded[i]) continue;
+    const w = originals[i];
+    if (remaining >= 3) { result[i] = w + 'ING'; remaining -= 3; }
+    else if (remaining >= 2) { result[i] = w + 'ED'; remaining -= 2; }
+    else { result[i] = w + 'S'; remaining -= 1; }
+    expanded[i] = true;
+    changes.push(`${w} → ${result[i]}`);
+  }
+  if (remaining > 0) changes.push(`Still ${remaining} short — add more words`);
+  return { words: result, changes };
+}
+
+// ──── ANALYSIS ────
+
+function analyze(spangram, words) {
+  const allWords = [spangram, ...words];
+  const totalLetters = allWords.reduce((s, w) => s + w.length, 0);
+  const deficit = TOTAL_CELLS - totalLetters;
+  const avgLen = words.length ? (words.reduce((s, w) => s + w.length, 0) / words.length).toFixed(1) : '0';
+  const longest = allWords.reduce((a, b) => a.length > b.length ? a : b, '');
+  const issues = [], warnings = [], info = [];
+
+  if (spangram.length < 2) issues.push('Spangram is too short');
+  if (spangram.length > TOTAL_CELLS) issues.push(`Spangram is longer than the board`);
+  if (spangram.length > Math.max(ROWS, COLS) * 2) warnings.push(`Spangram (${spangram.length} letters) may be hard to span`);
+  for (const w of allWords) {
+    if (w.length > 12) warnings.push(`"${w}" (${w.length}) is very long`);
+  }
+  if (words.length < 3) warnings.push(`Only ${words.length} theme words — usually need 6-12`);
+  if (words.length > 15) warnings.push(`${words.length} words is a lot`);
+  if (totalLetters > TOTAL_CELLS) issues.push(`${totalLetters} letters total — ${-deficit} too many for ${TOTAL_CELLS} cells`);
+  if (deficit > 20) issues.push(`Only ${totalLetters} letters — ${deficit} short, way too few`);
+  else if (deficit > 0) {
+    const paddable = words.filter(w => !'SXZ'.includes(w[w.length - 1])).length + words.length * 2;
+    if (deficit > paddable) issues.push(`${deficit} short — too many to fix by padding`);
+    else info.push(`${deficit} letters short — can auto-pad`);
+  }
+  if (deficit === 0) info.push('Letter count is perfect');
+
+  return { totalLetters, deficit, avgLen, longest, issues, warnings, info };
+}
+
+// ──── UI ────
+
+const themeInput = document.getElementById('themeInput');
+const spangramInput = document.getElementById('spangramInput');
+const wordsInput = document.getElementById('wordsInput');
+const statsEl = document.getElementById('stats');
+const logEl = document.getElementById('genLog');
+const linkOutput = document.getElementById('linkOutput');
+const testBtn = document.getElementById('testBtn');
+const linkBtn = document.getElementById('linkBtn');
+const previewSection = document.getElementById('previewSection');
+const previewGrid = document.getElementById('previewGrid');
+const previewChips = document.getElementById('previewChips');
+
+let lastGeneratedResult = null;
+let finalWords = null;
+let originalWords = null;
+
+function getInputs() {
+  const theme = themeInput.value.trim();
+  const spangram = spangramInput.value.trim().toUpperCase();
+  const raw = wordsInput.value.trim();
+  const words = raw ? raw.split(',').map(w => w.trim().toUpperCase()).filter(w => w.length > 0) : [];
+  return { theme, spangram, words };
+}
+
+function updateStats() {
+  const { theme, spangram, words } = getInputs();
+  if (!spangram && !words.length) {
+    statsEl.innerHTML = '<span class="muted">Enter a spangram and words to see analysis</span>';
+    testBtn.disabled = true;
+    linkBtn.disabled = true;
+    return;
+  }
+
+  const a = analyze(spangram, words);
+  let html = '';
+  html += `<div class="info">Spangram: <b>${spangram || '(empty)'}</b> (${spangram.length}) | Words: <b>${words.length}</b> | Avg length: ${a.avgLen}</div>`;
+  html += `<div class="${a.deficit === 0 ? 'ok' : a.deficit > 0 ? 'warn' : 'err'}">Letters: ${a.totalLetters} / ${TOTAL_CELLS}`;
+  if (a.deficit > 0) html += ` (${a.deficit} short — will pad)`;
+  else if (a.deficit < 0) html += ` (${-a.deficit} over)`;
+  else html += ` — perfect`;
+  html += `</div>`;
+  html += `<div class="muted">Longest: "${a.longest}" (${a.longest.length}) | Words: ${words.join(', ')}</div>`;
+  for (const e of a.issues) html += `<div class="err">✗ ${e}</div>`;
+  for (const w of a.warnings) html += `<div class="warn">⚠ ${w}</div>`;
+  for (const i of a.info) html += `<div class="info">ℹ ${i}</div>`;
+
+  // Show padding preview
+  if (a.deficit > 0 && a.issues.length === 0) {
+    const { words: padded, changes } = padToTarget(spangram, words);
+    if (changes.length > 0) {
+      html += `<div class="warn" style="margin-top:4px">Padding: ${changes.join(', ')}</div>`;
+    }
+  }
+
+  statsEl.innerHTML = html;
+  testBtn.disabled = a.issues.length > 0 && a.totalLetters > TOTAL_CELLS;
+  linkBtn.disabled = true;
+  lastGeneratedResult = null;
+  previewSection.style.display = 'none';
+  linkOutput.innerHTML = '';
+}
+
+function logLine(cls, text) {
+  const el = document.createElement('div');
+  el.className = cls;
+  el.textContent = text;
+  logEl.appendChild(el);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+async function testGenerate() {
+  const { theme, spangram, words } = getInputs();
+  if (!theme || !spangram || !words.length) {
+    alert('Fill in all fields');
+    return;
+  }
+
+  // Pad first
+  const { words: padded, changes } = padToTarget(spangram, words);
+  const total = spangram.length + padded.reduce((s, w) => s + w.length, 0);
+  originalWords = words;
+  finalWords = padded;
+
+  logEl.innerHTML = '';
+  previewSection.style.display = 'none';
+  linkOutput.innerHTML = '';
+  linkBtn.disabled = true;
+  testBtn.disabled = true;
+
+  logLine('log-info', `Theme: "${theme}"`);
+  logLine('log-info', `Spangram: ${spangram} (${spangram.length})`);
+  logLine('log-info', `Words (${padded.length}): ${padded.join(', ')}`);
+  logLine('log-info', `Total letters: ${total} / ${TOTAL_CELLS}`);
+
+  if (changes.length > 0) {
+    logLine('log-warn', `Padded: ${changes.join(', ')}`);
+  }
+
+  if (total !== TOTAL_CELLS) {
+    logLine('log-fail', `Letter count is ${total}, need exactly ${TOTAL_CELLS}. Cannot generate.`);
+    testBtn.disabled = false;
+    return;
+  }
+
+  logLine('log-muted', 'Starting generation...');
+  await sleep(50);
+
+  const MAX = 200;
+  let spanFails = 0;
+  let wordFails = {};
+  let bestAttempt = 0;
+
+  for (let attempt = 1; attempt <= MAX; attempt++) {
+    const { result, failedAt } = tryGenerateOnce(spangram, padded);
+
+    if (result) {
+      logLine('log-ok', `✓ Success on attempt ${attempt}!`);
+      lastGeneratedResult = result;
+      testBtn.disabled = false;
+      linkBtn.disabled = false;
+      showPreview(result, spangram, padded);
+      return;
+    }
+
+    if (failedAt === 'spangram') spanFails++;
+    else if (failedAt) wordFails[failedAt] = (wordFails[failedAt] || 0) + 1;
+
+    if (attempt <= 5 || attempt % 20 === 0) {
+      const sorted = Object.entries(wordFails).sort((a, b) => b[1] - a[1]).slice(0, 3);
+      const summary = sorted.map(([w, n]) => `${w}:${n}`).join(' ');
+      logLine('log-fail', `Attempt ${attempt}: failed at "${failedAt}"` +
+        (attempt % 20 === 0 ? ` | span:${spanFails} | ${summary}` : ''));
+      await sleep(0);
+    }
+  }
+
+  // Failed
+  logLine('log-fail', `✗ Failed after ${MAX} attempts`);
+  const sorted = Object.entries(wordFails).sort((a, b) => b[1] - a[1]);
+  if (spanFails > 0) logLine('log-warn', `Spangram failed ${spanFails} times`);
+  for (const [w, n] of sorted) logLine('log-warn', `"${w}" failed ${n} times`);
+  if (sorted.length > 0) {
+    logLine('log-info', `Tip: try removing or shortening "${sorted[0][0]}"`);
+  }
+  logLine('log-info', 'Tip: use shorter words, or add/remove words to change the fit');
+  testBtn.disabled = false;
+}
+
+function showPreview(result, spangram, words) {
+  const { grid, wordPaths } = result;
+  previewGrid.style.gridTemplateColumns = `repeat(${COLS}, 36px)`;
+  previewGrid.innerHTML = '';
+
+  // Build cell → word type map
+  const cellType = {};
+  for (const [word, path] of Object.entries(wordPaths)) {
+    const type = word === spangram ? 'spangram' : 'theme';
+    for (const [r, c] of path) cellType[`${r},${c}`] = type;
+  }
+
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'preview-cell';
+      cell.textContent = grid[r][c];
+      const type = cellType[`${r},${c}`];
+      if (type) cell.classList.add(type);
+      previewGrid.appendChild(cell);
+    }
+  }
+
+  // Word chips
+  previewChips.innerHTML = '';
+  const allWords = [spangram, ...words];
+  for (const word of allWords) {
+    const chip = document.createElement('span');
+    chip.className = 'word-chip ' + (word === spangram ? 'spangram' : 'theme');
+    chip.textContent = word;
+    // Mark padded words
+    if (originalWords && !originalWords.includes(word)) {
+      chip.classList.add('padded');
+    }
+    previewChips.appendChild(chip);
+  }
+
+  previewSection.style.display = 'block';
+}
+
+function generateLink() {
+  const { theme, spangram } = getInputs();
+  if (!finalWords) return;
+
+  const params = new URLSearchParams();
+  params.set('theme', theme);
+  params.set('spangram', spangram);
+  params.set('words', finalWords.join(','));
+
+  const base = window.location.href.replace(/maker\.html.*$/, 'index.html');
+  const url = base + '?' + params.toString();
+
+  linkOutput.innerHTML = `<a href="${url}" target="_blank">${url}</a>` +
+    `<span class="copy-note">Click to open, or copy the link to share</span>`;
+
+  // Also copy to clipboard
+  navigator.clipboard.writeText(url).catch(() => {});
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ──── EVENT HANDLERS ────
+
+themeInput.addEventListener('input', updateStats);
+spangramInput.addEventListener('input', updateStats);
+wordsInput.addEventListener('input', updateStats);
+testBtn.addEventListener('click', testGenerate);
+linkBtn.addEventListener('click', generateLink);
+
+updateStats();
+</script>
+</body>
+</html>
