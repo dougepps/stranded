@@ -26,6 +26,22 @@ index.html?theme=all+in+the+family&spangram=FUNNYONE&words=UPLAND%2CCARDS%2CSUSH
 
 The total letter count (spangram + all words) must equal exactly **48** to fill the 8×6 grid.
 
+### Pinning a Layout
+
+The generator tries many board layouts and picks the best one. To lock in a specific layout, add `&layout=N` where N is the attempt number. The debug panel shows a copyable "Layout URL" after each generation so you can share the exact board you're looking at.
+
+```
+```
+
+file:///home/depps/code/stranded/index.html?theme=Hiking+with+Seth&spangram=BULLSHIT&words=COMPLAIN%2CBRIDGES%2CHATS%2CWATERS%2CBLUEBARN%2CROLLING&layout=927
+
+file:///home/depps/code/stranded/index.html?theme=all+in+the+family&spangram=FUNNYONE&words=UPLAND%2CCARDS%2CSUSHI%2CWAFFLES%2CMOVIES%2CDOGGIES%2CBIGB&layout=3271
+
+https://dougepps.github.io/stranded/index.html?theme=all+in+the+family&spangram=FUNNYONE&words=UPLAND%2CCARDS%2CSUSHI%2CWAFFLES%2CMOVIES%2CDOGGIES%2CBIGB&layout=3271
+
+
+index.html?theme=Hiking+with+Seth&spangram=BULLSHIT&words=COMPLAIN,BRIDGES,HATS,WATERS,BLUEBARN,ROLLING
+
 ### Example
 
 ```

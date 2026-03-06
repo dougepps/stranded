@@ -2,13 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Stranded</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
     height: 100%;
     overflow: hidden;
+    touch-action: manipulation;
+    -ms-touch-action: manipulation;
   }
   body {
     font-family: 'Helvetica Neue', Arial, sans-serif;
@@ -364,6 +366,7 @@
     <button class="debug-btn danger" id="debugRevealAllBtn">Reveal All</button>
     <div class="debug-dict-status" id="debugLetterCount"></div>
     <div class="debug-dict-status" id="debugCustomNote"></div>
+    <div class="debug-dict-status" id="debugLayoutUrl" style="word-break:break-all;cursor:pointer;" title="Click to copy"></div>
     <div class="debug-dict-status" id="debugDictStatus">Dictionary: loading...</div>
     <a href="maker.html" style="display:block;margin-top:6px;color:#6be;font-size:10px;">Puzzle Maker →</a>
   </div>
@@ -562,8 +565,12 @@ function parseURLPuzzle() {
   const wordsParam = params.get('words');
   if (!theme || !spangram || !wordsParam) return null;
   const words = wordsParam.split(',').map(w => w.trim().toUpperCase()).filter(w => w.length > 0);
-  return { theme, spangram: spangram.trim().toUpperCase(), words };
+  const layout = params.get('layout');
+  return { theme, spangram: spangram.trim().toUpperCase(), words, layout: layout != null ? parseInt(layout, 10) : null };
 }
+
+// The attempt number that produced the current board (for sharing)
+let winningAttempt = null;
 
 let customPuzzleSet = null;
 
@@ -812,7 +819,7 @@ function tryGenerateOnce(puzzleSet) {
     for (let c = 0; c < COLS; c++)
       if (grid[r][c] === null) return null;
 
-  return { grid, theme, spangram, themeWords: shuffledWords, wordPaths };
+  return { grid, theme, spangram, themeWords: shuffledWords, originalWords: puzzleSet.words, wordPaths };
 }
 
 // ──── PASS 2: STRAIGHTEN PATHS ────
@@ -977,6 +984,61 @@ function penalizeLeftToRight(result) {
   return result;
 }
 
+// ──── PASS 4: DETECT AMBIGUOUS LETTER PATHS ────
+// For each word, check if there's an alternate valid path through the grid
+// that spells the same word but uses different cells. This means the user
+// could start tracing through the "wrong" duplicate letter and get stuck.
+// Returns a count of words that have ambiguous paths.
+
+function countAmbiguities(grid, wordPaths, allWords) {
+  let ambiguities = 0;
+  for (const word of allWords) {
+    const intendedPath = wordPaths[word];
+    // Find ALL valid paths through the grid that spell this word
+    // If more than one exists, the word is ambiguous
+    const intendedKey = intendedPath.map(([r,c]) => `${r},${c}`).join('|');
+    let foundAlt = false;
+
+    // DFS from every cell that matches word[0]
+    for (let r = 0; r < ROWS && !foundAlt; r++) {
+      for (let c = 0; c < COLS && !foundAlt; c++) {
+        if (grid[r][c] !== word[0]) continue;
+
+        const used = new Set([`${r},${c}`]);
+        const path = [[r, c]];
+
+        function searchAlt(idx) {
+          if (foundAlt) return;
+          if (idx === word.length) {
+            // Found a complete path — check if it differs from intended
+            const key = path.map(([r,c]) => `${r},${c}`).join('|');
+            if (key !== intendedKey) foundAlt = true;
+            return;
+          }
+          const [cr, cc] = path[path.length - 1];
+          for (const [dr, dc] of DIRS) {
+            const nr = cr + dr, nc = cc + dc;
+            const nk = `${nr},${nc}`;
+            if (!inBounds(nr, nc) || used.has(nk)) continue;
+            if (grid[nr][nc] !== word[idx]) continue;
+            used.add(nk);
+            path.push([nr, nc]);
+            searchAlt(idx + 1);
+            path.pop();
+            used.delete(nk);
+            if (foundAlt) return;
+          }
+        }
+
+        searchAlt(1);
+      }
+    }
+
+    if (foundAlt) ambiguities++;
+  }
+  return ambiguities;
+}
+
 // Count total inter-word and self crossings in a result
 function countAllCrossings(wordPaths, allWords) {
   // Build all segments: [r1, c1, r2, c2, wordIndex]
@@ -1011,13 +1073,34 @@ function generatePuzzle() {
   const puzzleSet = customPuzzleSet || PUZZLE_SETS[Math.floor(Math.random() * PUZZLE_SETS.length)];
   const seedStr = puzzleSet.theme + '|' + puzzleSet.spangram + '|' + puzzleSet.words.join(',');
   rng = mulberry32(hashString(seedStr));
+  winningAttempt = null;
 
   const t0 = performance.now();
+
+  // If a specific layout is requested, replay the RNG to that exact attempt
+  const targetLayout = puzzleSet.layout;
+  if (targetLayout != null && targetLayout > 0) {
+    console.log(`generatePuzzle: replaying to layout ${targetLayout}`);
+    for (let attempt = 1; attempt <= targetLayout; attempt++) {
+      const result = tryGenerateOnce(puzzleSet);
+      if (attempt === targetLayout && result) {
+        const straightened = penalizeLeftToRight(straightenPaths(result));
+        winningAttempt = targetLayout;
+        console.log(`generatePuzzle: layout ${targetLayout} reproduced in ${(performance.now()-t0).toFixed(0)}ms`);
+        return straightened;
+      }
+    }
+    console.warn(`generatePuzzle: layout ${targetLayout} did not produce a valid board, falling through to normal generation`);
+    // Reset RNG and fall through
+    rng = mulberry32(hashString(seedStr));
+  }
+
   const deadline = t0 + 5000; // 5 second max
 
   let attempts = 0;
   let bestResult = null;
-  let bestCrossings = Infinity;
+  let bestScore = Infinity;
+  let bestAttempt = 0;
 
   for (let attempt = 0; attempt < 5000; attempt++) {
     if (performance.now() > deadline) {
@@ -1030,20 +1113,27 @@ function generatePuzzle() {
       const straightened = penalizeLeftToRight(straightenPaths(result));
       const allWords = [straightened.spangram, ...straightened.themeWords];
       const crossings = countAllCrossings(straightened.wordPaths, allWords);
-      console.log(`generatePuzzle: attempt ${attempts} succeeded, ${crossings} crossings`);
-      if (crossings === 0) {
-        console.log(`generatePuzzle: perfect in ${(performance.now()-t0).toFixed(0)}ms`);
+      // Only spend time on ambiguity check for boards with 0 crossings
+      const ambiguities = crossings === 0
+        ? countAmbiguities(straightened.grid, straightened.wordPaths, allWords) : 0;
+      const score = crossings === 0 ? ambiguities : crossings * 100;
+      console.log(`generatePuzzle: attempt ${attempts} succeeded, ${crossings} crossings${crossings === 0 ? `, ${ambiguities} ambiguous words` : ''}, score ${score}`);
+      if (score === 0) {
+        winningAttempt = attempts;
+        console.log(`generatePuzzle: perfect (layout=${attempts}) in ${(performance.now()-t0).toFixed(0)}ms`);
         return straightened;
       }
-      if (crossings < bestCrossings) {
-        bestCrossings = crossings;
+      if (score < bestScore) {
+        bestScore = score;
         bestResult = straightened;
+        bestAttempt = attempts;
       }
     }
   }
 
   if (bestResult) {
-    console.log(`generatePuzzle: best has ${bestCrossings} crossings after ${attempts} attempts in ${(performance.now()-t0).toFixed(0)}ms`);
+    winningAttempt = bestAttempt;
+    console.log(`generatePuzzle: best has score ${bestScore} (layout=${bestAttempt}) after ${attempts} attempts in ${(performance.now()-t0).toFixed(0)}ms`);
     return bestResult;
   }
 
@@ -1443,6 +1533,24 @@ document.addEventListener('pointercancel', () => {
   dragStartedCell = null;
 });
 
+// ──── PREVENT MOBILE ZOOM ────
+// Double-tap zoom: block rapid successive touchstarts
+let lastTouchEnd = 0;
+document.addEventListener('touchstart', (e) => {
+  if (e.touches.length > 1) e.preventDefault();
+}, { passive: false });
+document.addEventListener('touchend', (e) => {
+  const now = Date.now();
+  if (now - lastTouchEnd < 300) e.preventDefault();
+  lastTouchEnd = now;
+}, { passive: false });
+// iOS Safari gesture zoom (pinch)
+document.addEventListener('gesturestart', (e) => e.preventDefault(), { passive: false });
+document.addEventListener('gesturechange', (e) => e.preventDefault(), { passive: false });
+document.addEventListener('gestureend', (e) => e.preventDefault(), { passive: false });
+// Desktop double-click zoom (some touch-enabled laptops)
+document.addEventListener('dblclick', (e) => e.preventDefault());
+
 // ──── SUBMIT / HINT LOGIC ────
 
 function submitWord() {
@@ -1597,6 +1705,26 @@ function renderDebug() {
 
   const noteEl = document.getElementById('debugCustomNote');
   noteEl.textContent = customPuzzleSet ? 'Source: URL params' : 'Source: built-in';
+
+  const layoutEl = document.getElementById('debugLayoutUrl');
+  if (winningAttempt != null) {
+    const p = new URLSearchParams();
+    p.set('theme', puzzle.theme);
+    p.set('spangram', puzzle.spangram);
+    p.set('words', (puzzle.originalWords || puzzle.themeWords).join(','));
+    p.set('layout', winningAttempt);
+    const url = window.location.pathname + '?' + p.toString();
+    layoutEl.textContent = `Layout URL (layout=${winningAttempt}): ${url}`;
+    layoutEl.onclick = () => {
+      navigator.clipboard.writeText(window.location.origin + url).then(() => {
+        layoutEl.textContent = 'Copied!';
+        setTimeout(() => renderDebug(), 1500);
+      });
+    };
+  } else {
+    layoutEl.textContent = '';
+    layoutEl.onclick = null;
+  }
 }
 
 document.getElementById('debugRevealBtn').addEventListener('click', () => {
@@ -1666,7 +1794,8 @@ if (urlPuzzle) {
   customPuzzleSet = {
     theme: urlPuzzle.theme,
     spangram: urlPuzzle.spangram,
-    words: urlPuzzle.words
+    words: urlPuzzle.words,
+    layout: urlPuzzle.layout
   };
 }
 
