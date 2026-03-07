@@ -993,50 +993,186 @@ function penalizeLeftToRight(result) {
 function countAmbiguities(grid, wordPaths, allWords) {
   let ambiguities = 0;
   for (const word of allWords) {
-    const intendedPath = wordPaths[word];
-    // Find ALL valid paths through the grid that spell this word
-    // If more than one exists, the word is ambiguous
-    const intendedKey = intendedPath.map(([r,c]) => `${r},${c}`).join('|');
-    let foundAlt = false;
+    if (isWordAmbiguous(grid, wordPaths, word)) ambiguities++;
+  }
+  return ambiguities;
+}
 
-    // DFS from every cell that matches word[0]
-    for (let r = 0; r < ROWS && !foundAlt; r++) {
-      for (let c = 0; c < COLS && !foundAlt; c++) {
-        if (grid[r][c] !== word[0]) continue;
+// Check if a single word is ambiguous on the grid (has an alternate path)
+function isWordAmbiguous(grid, wordPaths, word) {
+  const intendedPath = wordPaths[word];
+  const intendedKey = intendedPath.map(([r,c]) => `${r},${c}`).join('|');
+  let foundAlt = false;
 
-        const used = new Set([`${r},${c}`]);
-        const path = [[r, c]];
+  for (let r = 0; r < ROWS && !foundAlt; r++) {
+    for (let c = 0; c < COLS && !foundAlt; c++) {
+      if (grid[r][c] !== word[0]) continue;
+      const used = new Set([`${r},${c}`]);
+      const path = [[r, c]];
 
-        function searchAlt(idx) {
-          if (foundAlt) return;
-          if (idx === word.length) {
-            // Found a complete path — check if it differs from intended
-            const key = path.map(([r,c]) => `${r},${c}`).join('|');
-            if (key !== intendedKey) foundAlt = true;
-            return;
-          }
-          const [cr, cc] = path[path.length - 1];
-          for (const [dr, dc] of DIRS) {
-            const nr = cr + dr, nc = cc + dc;
-            const nk = `${nr},${nc}`;
-            if (!inBounds(nr, nc) || used.has(nk)) continue;
-            if (grid[nr][nc] !== word[idx]) continue;
-            used.add(nk);
-            path.push([nr, nc]);
-            searchAlt(idx + 1);
-            path.pop();
-            used.delete(nk);
-            if (foundAlt) return;
-          }
+      function searchAlt(idx) {
+        if (foundAlt) return;
+        if (idx === word.length) {
+          const key = path.map(([r,c]) => `${r},${c}`).join('|');
+          if (key !== intendedKey) foundAlt = true;
+          return;
         }
+        const [cr, cc] = path[path.length - 1];
+        for (const [dr, dc] of DIRS) {
+          const nr = cr + dr, nc = cc + dc;
+          const nk = `${nr},${nc}`;
+          if (!inBounds(nr, nc) || used.has(nk)) continue;
+          if (grid[nr][nc] !== word[idx]) continue;
+          used.add(nk);
+          path.push([nr, nc]);
+          searchAlt(idx + 1);
+          path.pop();
+          used.delete(nk);
+          if (foundAlt) return;
+        }
+      }
 
-        searchAlt(1);
+      searchAlt(1);
+    }
+  }
+  return foundAlt;
+}
+
+// ──── PASS 5: RESOLVE AMBIGUOUS LETTER PATHS ────
+// For each ambiguous word, try alternate Hamiltonian paths through the same
+// set of cells. Reassign letters along the new path and check if the
+// ambiguity disappears. Pick the first non-crossing path that works.
+
+function resolveAmbiguities(result) {
+  const { grid, spangram, themeWords, wordPaths } = result;
+  const allWords = [spangram, ...themeWords];
+
+  // Build all path segments for crossing checks
+  const allSegments = [];
+  for (let wi = 0; wi < allWords.length; wi++) {
+    const p = wordPaths[allWords[wi]];
+    for (let i = 0; i < p.length - 1; i++) {
+      allSegments.push([p[i][0], p[i][1], p[i+1][0], p[i+1][1], wi]);
+    }
+  }
+
+  for (let wi = 0; wi < allWords.length; wi++) {
+    const word = allWords[wi];
+    if (!isWordAmbiguous(grid, wordPaths, word)) continue;
+
+    const cells = wordPaths[word];
+    const n = cells.length;
+    if (n <= 2) continue;
+
+    // Build adjacency among this word's cells
+    const cellIdx = {};
+    for (let i = 0; i < n; i++) cellIdx[`${cells[i][0]},${cells[i][1]}`] = i;
+    const adj = Array.from({length: n}, () => []);
+    for (let i = 0; i < n; i++) {
+      const [r, c] = cells[i];
+      for (const [dr, dc] of DIRS) {
+        const k = `${r+dr},${c+dc}`;
+        if (k in cellIdx) adj[i].push(cellIdx[k]);
       }
     }
 
-    if (foundAlt) ambiguities++;
+    // Segments from other words
+    const otherSegs = allSegments.filter(s => s[4] !== wi);
+
+    // Current path as key to skip
+    const currentKey = cells.map(([r,c]) => `${r},${c}`).join('|');
+
+    // Enumerate candidate Hamiltonian paths through the cells
+    const candidates = [];
+    const MAX_CANDIDATES = 500;
+    const cPath = new Array(n);
+    const cIdx = new Array(n);
+    const used = new Uint8Array(n);
+
+    function crossesAnything(pr, pc, nr, nc, depth) {
+      for (let k = 0; k < depth - 1; k++) {
+        if (segmentsIntersect(pr, pc, nr, nc,
+            cPath[k][0], cPath[k][1], cPath[k+1][0], cPath[k+1][1])) return true;
+      }
+      for (let k = 0; k < otherSegs.length; k++) {
+        const s = otherSegs[k];
+        if (segmentsIntersect(pr, pc, nr, nc, s[0], s[1], s[2], s[3])) return true;
+      }
+      return false;
+    }
+
+    function enumerate(depth) {
+      if (candidates.length >= MAX_CANDIDATES) return;
+      if (depth === n) {
+        const key = cPath.slice(0, n).map(([r,c]) => `${r},${c}`).join('|');
+        if (key !== currentKey) candidates.push(cPath.slice(0, n).map(p => [...p]));
+        return;
+      }
+      const ci = cIdx[depth - 1];
+      const pr = cPath[depth - 1][0], pc = cPath[depth - 1][1];
+      for (const ni of adj[ci]) {
+        if (used[ni]) continue;
+        const nr = cells[ni][0], nc = cells[ni][1];
+        if (crossesAnything(pr, pc, nr, nc, depth)) continue;
+        cPath[depth] = cells[ni];
+        cIdx[depth] = ni;
+        used[ni] = 1;
+        enumerate(depth + 1);
+        used[ni] = 0;
+        if (candidates.length >= MAX_CANDIDATES) return;
+      }
+    }
+
+    for (let si = 0; si < n && candidates.length < MAX_CANDIDATES; si++) {
+      cPath[0] = cells[si];
+      cIdx[0] = si;
+      used.fill(0);
+      used[si] = 1;
+      enumerate(1);
+    }
+
+    // Try each candidate: reassign letters, check if ambiguity gone
+    // Save original letters so we can revert
+    const origLetters = cells.map(([r,c]) => grid[r][c]);
+
+    let fixed = false;
+    for (const candidatePath of candidates) {
+      // Assign word's letters along the candidate path
+      for (let i = 0; i < n; i++) {
+        grid[candidatePath[i][0]][candidatePath[i][1]] = word[i];
+      }
+      wordPaths[word] = candidatePath;
+
+      if (!isWordAmbiguous(grid, wordPaths, word)) {
+        // Update segments: remove old, add new
+        for (let i = allSegments.length - 1; i >= 0; i--) {
+          if (allSegments[i][4] === wi) allSegments.splice(i, 1);
+        }
+        for (let i = 0; i < n - 1; i++) {
+          allSegments.push([candidatePath[i][0], candidatePath[i][1],
+                            candidatePath[i+1][0], candidatePath[i+1][1], wi]);
+        }
+        fixed = true;
+        break;
+      }
+
+      // Revert letters
+      for (let i = 0; i < n; i++) {
+        grid[cells[i][0]][cells[i][1]] = origLetters[i];
+      }
+      wordPaths[word] = cells;
+    }
+
+    if (!fixed) {
+      // Revert to original (already done in loop, but be safe)
+      for (let i = 0; i < n; i++) {
+        grid[cells[i][0]][cells[i][1]] = origLetters[i];
+      }
+      wordPaths[word] = cells;
+    }
   }
-  return ambiguities;
+
+  return result;
 }
 
 // Count total inter-word and self crossings in a result
@@ -1085,6 +1221,7 @@ function generatePuzzle() {
       const result = tryGenerateOnce(puzzleSet);
       if (attempt === targetLayout && result) {
         const straightened = penalizeLeftToRight(straightenPaths(result));
+        resolveAmbiguities(straightened);
         winningAttempt = targetLayout;
         console.log(`generatePuzzle: layout ${targetLayout} reproduced in ${(performance.now()-t0).toFixed(0)}ms`);
         return straightened;
@@ -1113,9 +1250,12 @@ function generatePuzzle() {
       const straightened = penalizeLeftToRight(straightenPaths(result));
       const allWords = [straightened.spangram, ...straightened.themeWords];
       const crossings = countAllCrossings(straightened.wordPaths, allWords);
-      // Only spend time on ambiguity check for boards with 0 crossings
-      const ambiguities = crossings === 0
-        ? countAmbiguities(straightened.grid, straightened.wordPaths, allWords) : 0;
+      // Only spend time on ambiguity resolution for boards with 0 crossings
+      let ambiguities = 0;
+      if (crossings === 0) {
+        resolveAmbiguities(straightened);
+        ambiguities = countAmbiguities(straightened.grid, straightened.wordPaths, allWords);
+      }
       const score = crossings === 0 ? ambiguities : crossings * 100;
       console.log(`generatePuzzle: attempt ${attempts} succeeded, ${crossings} crossings${crossings === 0 ? `, ${ambiguities} ambiguous words` : ''}, score ${score}`);
       if (score === 0) {
@@ -1157,7 +1297,9 @@ function generatePuzzle() {
       const result = tryGenerateOnce(ps);
       if (result) {
         console.log(`generatePuzzle: fallback success in ${(performance.now()-t0).toFixed(0)}ms`);
-        return penalizeLeftToRight(straightenPaths(result));
+        const fallback = penalizeLeftToRight(straightenPaths(result));
+        resolveAmbiguities(fallback);
+        return fallback;
       }
     }
   }

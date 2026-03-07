@@ -242,20 +242,48 @@ const COLS = 6;
 const TOTAL_CELLS = ROWS * COLS;
 const DIRS = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
 
+// ──── SEEDED PRNG ────
+
+function hashString(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  }
+  return h >>> 0;
+}
+
+function mulberry32(seed) {
+  let s = seed | 0;
+  return function() {
+    s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+let rng = Math.random;
+
 function shuffle(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rng() * (i + 1));
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
   return arr;
 }
 function inBounds(r, c) { return r >= 0 && r < ROWS && c >= 0 && c < COLS; }
 
+// ──── PLACEMENT ────
+
 function placeWord(grid, word, sr, sc, occupied) {
   if (occupied.has(`${sr},${sc}`) || (grid[sr][sc] !== null && grid[sr][sc] !== word[0])) return null;
   const path = [[sr, sc]];
   const used = new Set([`${sr},${sc}`]);
+  let steps = 0;
+  const maxSteps = 10000;
+
   function backtrack(idx) {
+    if (++steps > maxSteps) return false;
     if (idx === word.length) return true;
     const [r, c] = path[path.length - 1];
     const dirs = shuffle([...DIRS]);
@@ -282,25 +310,68 @@ function placeWord(grid, word, sr, sc, occupied) {
   return null;
 }
 
-function placeSpangram(grid, word, occupied) {
+function getEmptyRegionSizes(occupied) {
+  const visited = new Set();
+  const sizes = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const key = `${r},${c}`;
+      if (occupied.has(key) || visited.has(key)) continue;
+      let size = 0;
+      const queue = [[r, c]];
+      visited.add(key);
+      while (queue.length > 0) {
+        const [cr, cc] = queue.pop();
+        size++;
+        for (const [dr, dc] of DIRS) {
+          const nr = cr + dr, nc = cc + dc;
+          const nk = `${nr},${nc}`;
+          if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS &&
+              !occupied.has(nk) && !visited.has(nk)) {
+            visited.add(nk);
+            queue.push([nr, nc]);
+          }
+        }
+      }
+      sizes.push(size);
+    }
+  }
+  return sizes;
+}
+
+function placeSpangram(grid, word, occupied, minWordLen) {
+  function spans(path) {
+    const cols = path.map(p => p[1]);
+    if (cols.includes(0) && cols.includes(COLS - 1)) return true;
+    const rows = path.map(p => p[0]);
+    return rows.includes(0) && rows.includes(ROWS - 1);
+  }
+
+  function islandOk(path) {
+    const tempOcc = new Set(occupied);
+    for (const [r, c] of path) tempOcc.add(`${r},${c}`);
+    const regions = getEmptyRegionSizes(tempOcc);
+    return !regions.some(sz => sz > 0 && sz < minWordLen);
+  }
+
   const startCols = [0, COLS - 1];
-  for (let attempt = 0; attempt < 200; attempt++) {
-    const sc = startCols[Math.floor(Math.random() * 2)];
-    const sr = Math.floor(Math.random() * ROWS);
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const sc = startCols[Math.floor(rng() * 2)];
+    const sr = Math.floor(rng() * ROWS);
     const path = placeWord(grid, word, sr, sc, occupied);
     if (path) {
-      const cols = path.map(p => p[1]);
-      if (cols.includes(0) && cols.includes(COLS - 1)) return path;
-      const rows = path.map(p => p[0]);
-      if (rows.includes(0) && rows.includes(ROWS - 1)) return path;
+      if (spans(path) && islandOk(path)) return path;
       for (const [r, c] of path) grid[r][c] = null;
     }
   }
-  for (let attempt = 0; attempt < 300; attempt++) {
-    const sr = Math.floor(Math.random() * ROWS);
-    const sc = Math.floor(Math.random() * COLS);
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const sr = Math.floor(rng() * ROWS);
+    const sc = Math.floor(rng() * COLS);
     const path = placeWord(grid, word, sr, sc, occupied);
-    if (path) return path;
+    if (path) {
+      if (islandOk(path)) return path;
+      for (const [r, c] of path) grid[r][c] = null;
+    }
   }
   return null;
 }
@@ -310,20 +381,46 @@ function tryGenerateOnce(spangram, words) {
   const occupied = new Set();
   const wordPaths = {};
 
-  const spanPath = placeSpangram(grid, spangram, occupied);
+  const minWordLen = Math.min(...words.map(w => w.length));
+  const spanPath = placeSpangram(grid, spangram, occupied, minWordLen);
   if (!spanPath) return { result: null, failedAt: 'spangram' };
   wordPaths[spangram] = spanPath;
   for (const [r, c] of spanPath) occupied.add(`${r},${c}`);
 
-  const shuffled = shuffle([...words]);
-  for (const word of shuffled) {
+  const sortedWords = [...words].sort((a, b) => b.length - a.length);
+  const shuffledWords = shuffle(sortedWords);
+
+  for (let wi = 0; wi < shuffledWords.length; wi++) {
+    const word = shuffledWords[wi];
+    const remainingAfter = shuffledWords.slice(wi + 1);
+    const minRemaining = remainingAfter.length > 0 ? Math.min(...remainingAfter.map(w => w.length)) : 0;
+
     let placed = false;
-    const starts = shuffle(Array.from({ length: ROWS * COLS }, (_, i) => [Math.floor(i / COLS), i % COLS]));
+    const borderCells = [];
+    const innerCells = [];
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (occupied.has(`${r},${c}`)) continue;
+        let adjToOccupied = false;
+        for (const [dr, dc] of DIRS) {
+          if (occupied.has(`${r+dr},${c+dc}`)) { adjToOccupied = true; break; }
+        }
+        if (adjToOccupied) borderCells.push([r, c]);
+        else innerCells.push([r, c]);
+      }
+    }
+    const starts = [...shuffle(borderCells), ...shuffle(innerCells)];
     for (const [sr, sc] of starts) {
       const path = placeWord(grid, word, sr, sc, occupied);
       if (path) {
-        wordPaths[word] = path;
         for (const [r, c] of path) occupied.add(`${r},${c}`);
+        const regions = getEmptyRegionSizes(occupied);
+        const bad = regions.some(sz => sz > 0 && sz < minRemaining);
+        if (bad) {
+          for (const [r, c] of path) { occupied.delete(`${r},${c}`); grid[r][c] = null; }
+          continue;
+        }
+        wordPaths[word] = path;
         placed = true;
         break;
       }
@@ -335,7 +432,353 @@ function tryGenerateOnce(spangram, words) {
     for (let c = 0; c < COLS; c++)
       if (grid[r][c] === null) return { result: null, failedAt: 'unfilled cells' };
 
-  return { result: { grid, wordPaths }, failedAt: null };
+  return { result: { grid, wordPaths, spangram, themeWords: shuffledWords }, failedAt: null };
+}
+
+// ──── PATH QUALITY PASSES ────
+
+function segmentsIntersect(r1,c1,r2,c2,r3,c3,r4,c4) {
+  const dr1 = r2 - r1, dc1 = c2 - c1;
+  const dr2 = r4 - r3, dc2 = c4 - c3;
+  if (Math.abs(dr1) === 1 && Math.abs(dc1) === 1 &&
+      Math.abs(dr2) === 1 && Math.abs(dc2) === 1) {
+    const minR1 = Math.min(r1, r2), minC1 = Math.min(c1, c2);
+    const minR2 = Math.min(r3, r4), minC2 = Math.min(c3, c4);
+    if (minR1 === minR2 && minC1 === minC2) {
+      if (dr1 * dc1 !== dr2 * dc2) return true;
+    }
+    return false;
+  }
+  const d1 = (r4-r3)*(c1-c3) - (c4-c3)*(r1-r3);
+  const d2 = (r4-r3)*(c2-c3) - (c4-c3)*(r2-r3);
+  const d3 = (r2-r1)*(c3-c1) - (c2-c1)*(r3-r1);
+  const d4 = (r2-r1)*(c4-c1) - (c2-c1)*(r4-r1);
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+      ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return true;
+  return false;
+}
+
+function straightenPaths(result) {
+  const { grid, spangram, themeWords, wordPaths } = result;
+  const allWords = [spangram, ...themeWords];
+
+  const allSegments = [];
+  for (let wi = 0; wi < allWords.length; wi++) {
+    const p = wordPaths[allWords[wi]];
+    for (let i = 0; i < p.length - 1; i++) {
+      allSegments.push([p[i][0], p[i][1], p[i+1][0], p[i+1][1], wi]);
+    }
+  }
+
+  for (let wi = 0; wi < allWords.length; wi++) {
+    const word = allWords[wi];
+    const cells = wordPaths[word];
+    const n = cells.length;
+    if (n <= 2) continue;
+
+    const otherSegs = allSegments.filter(s => s[4] !== wi);
+    const cellIdx = {};
+    for (let i = 0; i < n; i++) cellIdx[`${cells[i][0]},${cells[i][1]}`] = i;
+    const adj = Array.from({length: n}, () => []);
+    for (let i = 0; i < n; i++) {
+      const [r, c] = cells[i];
+      for (const [dr, dc] of DIRS) {
+        const k = `${r+dr},${c+dc}`;
+        if (k in cellIdx) adj[i].push(cellIdx[k]);
+      }
+    }
+
+    const path = new Array(n);
+    const idxPath = new Array(n);
+    const used = new Uint8Array(n);
+    let found = false;
+    let steps = 0;
+    const maxSteps = 10000;
+
+    function crossesAnything(pr, pc, nr, nc, depth) {
+      for (let k = 0; k < depth - 1; k++) {
+        if (segmentsIntersect(pr, pc, nr, nc,
+            path[k][0], path[k][1], path[k+1][0], path[k+1][1])) return true;
+      }
+      for (let k = 0; k < otherSegs.length; k++) {
+        const s = otherSegs[k];
+        if (segmentsIntersect(pr, pc, nr, nc, s[0], s[1], s[2], s[3])) return true;
+      }
+      return false;
+    }
+
+    function dfs(depth) {
+      if (found || steps > maxSteps) return;
+      steps++;
+      if (depth === n) { found = true; return; }
+      const ci = idxPath[depth - 1];
+      const nbs = adj[ci];
+      const pr = path[depth - 1][0], pc = path[depth - 1][1];
+      for (let pass = 0; pass < 2 && !found; pass++) {
+        for (let j = 0; j < nbs.length && !found; j++) {
+          const ni = nbs[j];
+          if (used[ni]) continue;
+          const nr = cells[ni][0], nc = cells[ni][1];
+          const crosses = crossesAnything(pr, pc, nr, nc, depth);
+          if (pass === 0 && crosses) continue;
+          if (pass === 1 && !crosses) continue;
+          path[depth] = cells[ni];
+          idxPath[depth] = ni;
+          used[ni] = 1;
+          dfs(depth + 1);
+          used[ni] = 0;
+        }
+      }
+    }
+
+    for (let si = 0; si < n && !found && steps <= maxSteps; si++) {
+      path[0] = cells[si];
+      idxPath[0] = si;
+      used.fill(0);
+      used[si] = 1;
+      dfs(1);
+    }
+
+    if (found) {
+      for (let i = allSegments.length - 1; i >= 0; i--) {
+        if (allSegments[i][4] === wi) allSegments.splice(i, 1);
+      }
+      const newPath = [];
+      for (let i = 0; i < n; i++) newPath.push(path[i]);
+      wordPaths[word] = newPath;
+      for (let i = 0; i < n; i++) {
+        grid[newPath[i][0]][newPath[i][1]] = word[i];
+      }
+      for (let i = 0; i < n - 1; i++) {
+        allSegments.push([newPath[i][0], newPath[i][1], newPath[i+1][0], newPath[i+1][1], wi]);
+      }
+    }
+  }
+  return result;
+}
+
+function penalizeLeftToRight(result) {
+  const { grid, spangram, themeWords, wordPaths } = result;
+  const allWords = [spangram, ...themeWords];
+
+  for (const word of allWords) {
+    const path = wordPaths[word];
+    if (path.length < 3) continue;
+    let maxLtrRun = 0, currentRun = 0, startsLtr = false;
+    for (let i = 0; i < path.length - 1; i++) {
+      const [r1, c1] = path[i];
+      const [r2, c2] = path[i + 1];
+      if (r2 === r1 && c2 === c1 + 1) {
+        currentRun++;
+        if (i === 0) startsLtr = true;
+      } else {
+        if (currentRun > maxLtrRun) maxLtrRun = currentRun;
+        currentRun = 0;
+      }
+    }
+    if (currentRun > maxLtrRun) maxLtrRun = currentRun;
+    if (maxLtrRun >= 3 || (startsLtr && maxLtrRun >= 2)) {
+      const reversed = [...path].reverse();
+      wordPaths[word] = reversed;
+      for (let i = 0; i < word.length; i++) {
+        grid[reversed[i][0]][reversed[i][1]] = word[i];
+      }
+    }
+  }
+  return result;
+}
+
+// ──── AMBIGUITY DETECTION & RESOLUTION ────
+
+function isWordAmbiguous(grid, wordPaths, word) {
+  const intendedPath = wordPaths[word];
+  const intendedKey = intendedPath.map(([r,c]) => `${r},${c}`).join('|');
+  let foundAlt = false;
+
+  for (let r = 0; r < ROWS && !foundAlt; r++) {
+    for (let c = 0; c < COLS && !foundAlt; c++) {
+      if (grid[r][c] !== word[0]) continue;
+      const used = new Set([`${r},${c}`]);
+      const path = [[r, c]];
+
+      function searchAlt(idx) {
+        if (foundAlt) return;
+        if (idx === word.length) {
+          const key = path.map(([r,c]) => `${r},${c}`).join('|');
+          if (key !== intendedKey) foundAlt = true;
+          return;
+        }
+        const [cr, cc] = path[path.length - 1];
+        for (const [dr, dc] of DIRS) {
+          const nr = cr + dr, nc = cc + dc;
+          const nk = `${nr},${nc}`;
+          if (!inBounds(nr, nc) || used.has(nk)) continue;
+          if (grid[nr][nc] !== word[idx]) continue;
+          used.add(nk);
+          path.push([nr, nc]);
+          searchAlt(idx + 1);
+          path.pop();
+          used.delete(nk);
+          if (foundAlt) return;
+        }
+      }
+
+      searchAlt(1);
+    }
+  }
+  return foundAlt;
+}
+
+function countAmbiguities(grid, wordPaths, allWords) {
+  let ambiguities = 0;
+  for (const word of allWords) {
+    if (isWordAmbiguous(grid, wordPaths, word)) ambiguities++;
+  }
+  return ambiguities;
+}
+
+function resolveAmbiguities(result) {
+  const { grid, spangram, themeWords, wordPaths } = result;
+  const allWords = [spangram, ...themeWords];
+
+  const allSegments = [];
+  for (let wi = 0; wi < allWords.length; wi++) {
+    const p = wordPaths[allWords[wi]];
+    for (let i = 0; i < p.length - 1; i++) {
+      allSegments.push([p[i][0], p[i][1], p[i+1][0], p[i+1][1], wi]);
+    }
+  }
+
+  for (let wi = 0; wi < allWords.length; wi++) {
+    const word = allWords[wi];
+    if (!isWordAmbiguous(grid, wordPaths, word)) continue;
+
+    const cells = wordPaths[word];
+    const n = cells.length;
+    if (n <= 2) continue;
+
+    const cellIdx = {};
+    for (let i = 0; i < n; i++) cellIdx[`${cells[i][0]},${cells[i][1]}`] = i;
+    const adj = Array.from({length: n}, () => []);
+    for (let i = 0; i < n; i++) {
+      const [r, c] = cells[i];
+      for (const [dr, dc] of DIRS) {
+        const k = `${r+dr},${c+dc}`;
+        if (k in cellIdx) adj[i].push(cellIdx[k]);
+      }
+    }
+
+    const otherSegs = allSegments.filter(s => s[4] !== wi);
+    const currentKey = cells.map(([r,c]) => `${r},${c}`).join('|');
+
+    const candidates = [];
+    const MAX_CANDIDATES = 500;
+    const cPath = new Array(n);
+    const cIdx = new Array(n);
+    const used = new Uint8Array(n);
+
+    function crossesAnything(pr, pc, nr, nc, depth) {
+      for (let k = 0; k < depth - 1; k++) {
+        if (segmentsIntersect(pr, pc, nr, nc,
+            cPath[k][0], cPath[k][1], cPath[k+1][0], cPath[k+1][1])) return true;
+      }
+      for (let k = 0; k < otherSegs.length; k++) {
+        const s = otherSegs[k];
+        if (segmentsIntersect(pr, pc, nr, nc, s[0], s[1], s[2], s[3])) return true;
+      }
+      return false;
+    }
+
+    function enumerate(depth) {
+      if (candidates.length >= MAX_CANDIDATES) return;
+      if (depth === n) {
+        const key = cPath.slice(0, n).map(([r,c]) => `${r},${c}`).join('|');
+        if (key !== currentKey) candidates.push(cPath.slice(0, n).map(p => [...p]));
+        return;
+      }
+      const ci = cIdx[depth - 1];
+      const pr = cPath[depth - 1][0], pc = cPath[depth - 1][1];
+      for (const ni of adj[ci]) {
+        if (used[ni]) continue;
+        const nr = cells[ni][0], nc = cells[ni][1];
+        if (crossesAnything(pr, pc, nr, nc, depth)) continue;
+        cPath[depth] = cells[ni];
+        cIdx[depth] = ni;
+        used[ni] = 1;
+        enumerate(depth + 1);
+        used[ni] = 0;
+        if (candidates.length >= MAX_CANDIDATES) return;
+      }
+    }
+
+    for (let si = 0; si < n && candidates.length < MAX_CANDIDATES; si++) {
+      cPath[0] = cells[si];
+      cIdx[0] = si;
+      used.fill(0);
+      used[si] = 1;
+      enumerate(1);
+    }
+
+    const origLetters = cells.map(([r,c]) => grid[r][c]);
+    let fixed = false;
+
+    for (const candidatePath of candidates) {
+      for (let i = 0; i < n; i++) {
+        grid[candidatePath[i][0]][candidatePath[i][1]] = word[i];
+      }
+      wordPaths[word] = candidatePath;
+
+      if (!isWordAmbiguous(grid, wordPaths, word)) {
+        for (let i = allSegments.length - 1; i >= 0; i--) {
+          if (allSegments[i][4] === wi) allSegments.splice(i, 1);
+        }
+        for (let i = 0; i < n - 1; i++) {
+          allSegments.push([candidatePath[i][0], candidatePath[i][1],
+                            candidatePath[i+1][0], candidatePath[i+1][1], wi]);
+        }
+        fixed = true;
+        break;
+      }
+
+      for (let i = 0; i < n; i++) {
+        grid[cells[i][0]][cells[i][1]] = origLetters[i];
+      }
+      wordPaths[word] = cells;
+    }
+
+    if (!fixed) {
+      for (let i = 0; i < n; i++) {
+        grid[cells[i][0]][cells[i][1]] = origLetters[i];
+      }
+      wordPaths[word] = cells;
+    }
+  }
+  return result;
+}
+
+function countAllCrossings(wordPaths, allWords) {
+  const segs = [];
+  for (let wi = 0; wi < allWords.length; wi++) {
+    const p = wordPaths[allWords[wi]];
+    for (let i = 0; i < p.length - 1; i++) {
+      segs.push([p[i][0], p[i][1], p[i+1][0], p[i+1][1], wi]);
+    }
+  }
+  let crossings = 0;
+  for (let i = 0; i < segs.length; i++) {
+    for (let j = i + 1; j < segs.length; j++) {
+      if (segs[i][4] === segs[j][4]) {
+        const a = segs[i], b = segs[j];
+        if ((a[0] === b[0] && a[1] === b[1]) || (a[0] === b[2] && a[1] === b[3]) ||
+            (a[2] === b[0] && a[3] === b[1]) || (a[2] === b[2] && a[3] === b[3])) continue;
+      }
+      if (segmentsIntersect(segs[i][0], segs[i][1], segs[i][2], segs[i][3],
+                             segs[j][0], segs[j][1], segs[j][2], segs[j][3])) {
+        crossings++;
+      }
+    }
+  }
+  return crossings;
 }
 
 // ──── PADDING ────
@@ -426,6 +869,7 @@ const previewChips = document.getElementById('previewChips');
 let lastGeneratedResult = null;
 let finalWords = null;
 let originalWords = null;
+let winningAttempt = null;
 
 function getInputs() {
   const theme = themeInput.value.trim();
@@ -499,6 +943,7 @@ async function testGenerate() {
   linkOutput.innerHTML = '';
   linkBtn.disabled = true;
   testBtn.disabled = true;
+  winningAttempt = null;
 
   logLine('log-info', `Theme: "${theme}"`);
   logLine('log-info', `Spangram: ${spangram} (${spangram.length})`);
@@ -515,40 +960,89 @@ async function testGenerate() {
     return;
   }
 
+  // Use seeded PRNG matching index.html
+  const seedStr = theme + '|' + spangram + '|' + padded.join(',');
+  rng = mulberry32(hashString(seedStr));
+
   logLine('log-muted', 'Starting generation...');
   await sleep(50);
 
-  const MAX = 200;
+  const t0 = performance.now();
+  const deadline = t0 + 5000;
+  const MAX = 5000;
+  let attempts = 0;
   let spanFails = 0;
   let wordFails = {};
+  let bestResult = null;
+  let bestScore = Infinity;
   let bestAttempt = 0;
 
   for (let attempt = 1; attempt <= MAX; attempt++) {
+    if (performance.now() > deadline) {
+      logLine('log-muted', `Hit 5s deadline after ${attempts} attempts`);
+      break;
+    }
+    attempts++;
     const { result, failedAt } = tryGenerateOnce(spangram, padded);
 
     if (result) {
-      logLine('log-ok', `✓ Success on attempt ${attempt}!`);
-      lastGeneratedResult = result;
-      testBtn.disabled = false;
-      linkBtn.disabled = false;
-      showPreview(result, spangram, padded);
-      return;
+      const processed = penalizeLeftToRight(straightenPaths(result));
+      const allWords = [processed.spangram, ...processed.themeWords];
+      const crossings = countAllCrossings(processed.wordPaths, allWords);
+      let ambiguities = 0;
+      if (crossings === 0) {
+        resolveAmbiguities(processed);
+        ambiguities = countAmbiguities(processed.grid, processed.wordPaths, allWords);
+      }
+      const score = crossings === 0 ? ambiguities : crossings * 100;
+
+      if (attempt <= 10 || attempt % 50 === 0 || score === 0) {
+        logLine(score === 0 ? 'log-ok' : 'log-info',
+          `Attempt ${attempt}: ${crossings} crossings${crossings === 0 ? `, ${ambiguities} ambiguous` : ''}, score ${score}`);
+        await sleep(0);
+      }
+
+      if (score === 0) {
+        logLine('log-ok', `✓ Perfect board on attempt ${attempt} (${(performance.now()-t0).toFixed(0)}ms)`);
+        winningAttempt = attempt;
+        lastGeneratedResult = processed;
+        testBtn.disabled = false;
+        linkBtn.disabled = false;
+        showPreview(processed, spangram, padded);
+        return;
+      }
+      if (score < bestScore) {
+        bestScore = score;
+        bestResult = processed;
+        bestAttempt = attempt;
+      }
+      continue;
     }
 
     if (failedAt === 'spangram') spanFails++;
     else if (failedAt) wordFails[failedAt] = (wordFails[failedAt] || 0) + 1;
 
-    if (attempt <= 5 || attempt % 20 === 0) {
+    if (attempt <= 5 || attempt % 100 === 0) {
       const sorted = Object.entries(wordFails).sort((a, b) => b[1] - a[1]).slice(0, 3);
       const summary = sorted.map(([w, n]) => `${w}:${n}`).join(' ');
       logLine('log-fail', `Attempt ${attempt}: failed at "${failedAt}"` +
-        (attempt % 20 === 0 ? ` | span:${spanFails} | ${summary}` : ''));
+        (attempt % 100 === 0 ? ` | span:${spanFails} | ${summary}` : ''));
       await sleep(0);
     }
   }
 
+  if (bestResult) {
+    winningAttempt = bestAttempt;
+    logLine('log-warn', `Best board has score ${bestScore} (layout=${bestAttempt}) after ${attempts} attempts (${(performance.now()-t0).toFixed(0)}ms)`);
+    lastGeneratedResult = bestResult;
+    testBtn.disabled = false;
+    linkBtn.disabled = false;
+    showPreview(bestResult, spangram, padded);
+    return;
+  }
+
   // Failed
-  logLine('log-fail', `✗ Failed after ${MAX} attempts`);
+  logLine('log-fail', `✗ Failed after ${attempts} attempts`);
   const sorted = Object.entries(wordFails).sort((a, b) => b[1] - a[1]);
   if (spanFails > 0) logLine('log-warn', `Spangram failed ${spanFails} times`);
   for (const [w, n] of sorted) logLine('log-warn', `"${w}" failed ${n} times`);
@@ -607,6 +1101,7 @@ function generateLink() {
   params.set('theme', theme);
   params.set('spangram', spangram);
   params.set('words', finalWords.join(','));
+  if (winningAttempt != null) params.set('layout', winningAttempt);
 
   const base = window.location.href.replace(/maker\.html.*$/, 'index.html');
   const url = base + '?' + params.toString();

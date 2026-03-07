@@ -37,10 +37,19 @@ file:///home/depps/code/stranded/index.html?theme=Hiking+with+Seth&spangram=BULL
 
 file:///home/depps/code/stranded/index.html?theme=all+in+the+family&spangram=FUNNYONE&words=UPLAND%2CCARDS%2CSUSHI%2CWAFFLES%2CMOVIES%2CDOGGIES%2CBIGB&layout=3271
 
+# FAM
 https://dougepps.github.io/stranded/index.html?theme=all+in+the+family&spangram=FUNNYONE&words=UPLAND%2CCARDS%2CSUSHI%2CWAFFLES%2CMOVIES%2CDOGGIES%2CBIGB&layout=3271
 
+fam https://tinyurl.com/y3ajpkux
 
-index.html?theme=Hiking+with+Seth&spangram=BULLSHIT&words=COMPLAIN,BRIDGES,HATS,WATERS,BLUEBARN,ROLLING
+# Hike
+
+Hiking with Seth
+BULLSHIT, COMPLAIN, BRIDGES, HATS, WATERS, BLUEBARN, ROLLING
+
+https://dougepps.github.io/stranded/index.html?theme=Hiking+with+Seth&spangram=BULLSHIT&words=COMPLAIN%2CBRIDGES%2CHATS%2CWATERS%2CBLUEBARN%2CROLLING&layout=927
+
+hike  https://tinyurl.com/5n86bkwx
 
 ### Example
 
